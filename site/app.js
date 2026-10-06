@@ -265,9 +265,10 @@
     return { pages, visuals, scanned: chars / Math.max(1, pages.length) < 40 };
   }
 
-  const IMG_MAX_W = 1400;
+  // 그림 폭·화질: Claude가 어차피 약 900px로 줄여 읽어서 1100px·75로도 판독은 같고 용량은 약 57%
+  const IMG_MAX_W = 1100;
   async function canvasToJpeg(canvas) {
-    return new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.82));
+    return new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.75));
   }
   async function renderPdfPage(pdf, n) {
     const page = await pdf.getPage(n);
