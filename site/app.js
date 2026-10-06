@@ -420,7 +420,7 @@
     limit_site: "오늘은 사이트 전체 요청이 마감됐어요. 밤 12시가 지나면 다시 열려요."
   };
   function quotaBlock() {
-    if (!quota) return null;
+    if (!quota || quota.unlimited) return null;
     if (quota.site_full) return LIMIT_MSG.limit_site;
     if (quota.used >= quota.limit) return LIMIT_MSG.limit_daily;
     if (quota.open >= quota.open_limit) return LIMIT_MSG.limit_open;
@@ -433,7 +433,8 @@
     quota = data;
     const q = $("quota");
     q.hidden = false;
-    q.textContent = `오늘 남은 요청 ${Math.max(0, quota.limit - quota.used)}/${quota.limit} · 매일 0시 초기화`;
+    q.textContent = quota.unlimited ? "관리자 · 요청 횟수 제한 없음"
+      : `오늘 남은 요청 ${Math.max(0, quota.limit - quota.used)}/${quota.limit} · 매일 0시 초기화`;
     q.classList.toggle("out", !!quotaBlock());
     renderFiles();
   }
