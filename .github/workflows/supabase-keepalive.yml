@@ -17,11 +17,12 @@ jobs:
         run: |
           URL=$(grep -oP 'SUPABASE_URL:\s*"\K[^"]+' site/config.js)
           KEY=$(grep -oP 'SUPABASE_KEY:\s*"\K[^"]+' site/config.js)
-          code=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "apikey: $KEY" -A "gichul-keepalive/1.0" \
-            "$URL/rest/v1/limits?select=*&limit=1")
-          echo "응답 코드: $code"
-          if [ "$code" -ge 500 ] || [ "$code" = "000" ]; then
+          # supabase-keepalive.sql 의 keepalive() 함수 호출 (DB까지 실제로 접속)
+          code=$(curl -s -o body.txt -w "%{http_code}" -X POST \
+            -H "apikey: $KEY" -H "Content-Type: application/json" -A "gichul-keepalive/1.0" \
+            -d '{}' "$URL/rest/v1/rpc/keepalive")
+          echo "응답 코드: $code / $(cat body.txt)"
+          if [ "$code" != "200" ]; then
             echo "::error::Supabase 응답 없음 — 일시정지됐을 수 있어요. 대시보드에서 Restore 하세요."
             exit 1
           fi
