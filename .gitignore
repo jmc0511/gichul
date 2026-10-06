@@ -1,0 +1,10 @@
+# 비밀 값 — 절대 올리지 않음
+secret.json
+.env
+*.env
+nas/.env
+
+# 작업용·임시
+work/
+node_modules/
+*.log

@@ -1,0 +1,16 @@
+services:
+  gichul-worker:
+    build: .
+    container_name: gichul-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - POLL_SECONDS=30
+      - MAX_PARALLEL=3
+      # 더 빠르게: sonnet / 기본 모델 쓰려면 비워 둠
+      - CLAUDE_MODEL=
+    volumes:
+      - work:/work
+
+volumes:
+  work:
