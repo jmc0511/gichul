@@ -45,7 +45,7 @@ switch ($Cmd) {
     }
   }
   "claim" {
-    $r = Call PATCH "/requests?id=eq.$Id&status=eq.pending" @{ status = "working" }
+    $r = Call PATCH "/requests?id=eq.$Id&status=eq.pending" @{ status = "working"; started_at = (Get-Date).ToUniversalTime().ToString("o") }
     if (-not $r) { throw "요청 $Id 을(를) 가져올 수 없음 (이미 처리 중이거나 없음)" }
     $row = (Call GET "/requests?id=eq.$Id&select=instructions,material" $null)[0]
     $dir = Join-Path $here "work"; New-Item -ItemType Directory -Force $dir | Out-Null
@@ -58,11 +58,12 @@ switch ($Cmd) {
     if (-not $exam.questions -or @($exam.questions).Count -eq 0) { throw "questions 가 비어 있음" }
     $row = @{ request_id = $Id; title = [string]$exam.title; subject = [string]$exam.subject; questions = @($exam.questions) }
     $saved = (Call POST "/exams" $row)[0]
-    Call PATCH "/requests?id=eq.$Id" @{ status = "done"; exam_id = $saved.id; material = "" } | Out-Null
+    # 자료는 "같은 자료로 다시 출제"용으로 남김 (14일 뒤 NAS 청소가 비움)
+    Call PATCH "/requests?id=eq.$Id" @{ status = "done"; exam_id = $saved.id; finished_at = (Get-Date).ToUniversalTime().ToString("o") } | Out-Null
     "완료: 시험지 $($saved.id) ($(@($exam.questions).Count)문항)"
   }
   "fail" {
-    Call PATCH "/requests?id=eq.$Id" @{ status = "error"; error = $Arg } | Out-Null
+    Call PATCH "/requests?id=eq.$Id" @{ status = "error"; error = $Arg; finished_at = (Get-Date).ToUniversalTime().ToString("o") } | Out-Null
     "실패 처리: $Id"
   }
   default { throw "알 수 없는 명령: $Cmd (list | watch | claim | done | fail)" }

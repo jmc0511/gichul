@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { pending, claim, finish, failReq, setProgress, stillWanted, resetStale, broadcast, downloadImage, deleteImages, uploadFigure, SUPABASE_URL, SUPABASE_SECRET } from "./queue.mjs";
+import { pending, claim, finish, failReq, setProgress, stillWanted, resetStale, broadcast, downloadImage, uploadFigure, earlierQuestions, heartbeat, cleanup, SUPABASE_URL, SUPABASE_SECRET } from "./queue.mjs";
 
 const INTERVAL = (parseInt(process.env.POLL_SECONDS, 10) || 30) * 1000;
 const MAX_PARALLEL = parseInt(process.env.MAX_PARALLEL, 10) || 3;
@@ -107,7 +107,7 @@ async function handle(id) {
   running.add(id);
   const started = Date.now();
   // 사용자가 요청을 취소하면(행 삭제) Claude를 바로 멈춰 사용량을 아낌
-  let cancelled = false, proc = null, imagePaths = [];
+  let cancelled = false, proc = null;
   const imgBufs = new Map();
   const cancel = () => { if (cancelled) return; cancelled = true; log(`[${short(id)}] 사용자가 취소함 → 중단`); proc?.kill("SIGTERM"); };
   const watcher = setInterval(() => { stillWanted(id).then((ok) => { if (!ok) cancel(); }).catch(() => {}); }, 5000);
@@ -118,7 +118,17 @@ async function handle(id) {
     await broadcast("req-" + id, "update", { status: "working", progress: "자료 읽는 중" });
     log(`[${short(id)}] 출제 시작 (${total || "?"}문항)`);
 
-    imagePaths = (row.images || []).map((im) => im.path);
+    // 같은 자료로 다시 출제한 요청이면 앞서 낸 문제와 겹치지 않게
+    let retryNote = "";
+    if (row.retry_of) {
+      const prev = await earlierQuestions(row.retry_of).catch(() => []);
+      if (prev.length) {
+        const list = prev.slice(0, 80).map((q) => "- " + q.replace(/\s+/g, " ").slice(0, 160)).join("\n");
+        retryNote = `\n\n[다시 출제] 이 학생은 같은 자료로 이미 아래 문제를 풀었습니다. 이 문제들과 겹치지 않게, 아직 묻지 않은 개념이나 다른 각도·다른 수치로 새 문제를 만드세요. 시험지 제목도 앞의 것과 구분되게 정하세요.\n${list}`;
+        log(`[${short(id)}] 다시 출제 (앞서 낸 문제 ${prev.length}개 피함)`);
+      }
+    }
+
     const content = [];
     for (const im of row.images || []) {
       try {
@@ -129,7 +139,7 @@ async function handle(id) {
     }
     const nImg = content.length / 2;
     if (nImg) log(`[${short(id)}] 그림 ${nImg}장 함께 보냄`);
-    content.push({ type: "text", text: `${RULES}\n\n${row.instructions}\n\n[공부자료 원문]\n${row.material}${nImg ? `\n\n[첨부 이미지] 위에 자료 속 그림 ${nImg}장을 붙였습니다. 본문의 "[이 쪽의 그림: 첨부 이미지 #n]" 표시와 이미지 이름으로 어느 쪽 그림인지 알 수 있습니다.` : ""}\n\n[다시 한 번] 위 형식의 JSON 하나만 출력하세요.` });
+    content.push({ type: "text", text: `${RULES}\n\n${row.instructions}${retryNote}\n\n[공부자료 원문]\n${row.material}${nImg ? `\n\n[첨부 이미지] 위에 자료 속 그림 ${nImg}장을 붙였습니다. 본문의 "[이 쪽의 그림: 첨부 이미지 #n]" 표시와 이미지 이름으로 어느 쪽 그림인지 알 수 있습니다.` : ""}\n\n[다시 한 번] 위 형식의 JSON 하나만 출력하세요.` });
     let lastShown = 0, lastDb = 0, lastCount = -1;
     const onText = (text) => {
       const n = (text.match(/"question"\s*:/g) || []).length;
@@ -157,24 +167,40 @@ async function handle(id) {
   } catch (e) {
     if (!cancelled) {
       log(`[${short(id)}] 실패: ${e.message}`);
-      await failReq(id, "출제 중 오류가 났어요. 다시 요청해 주세요.").catch(() => {});
+      await failReq(id, "출제 중 오류가 났어요. 다시 시도해 주세요.", e?.message).catch(() => {});
       await broadcast("req-" + id, "update", { status: "error" });
     }
   } finally {
     clearInterval(watcher);
-    deleteImages(imagePaths); // 끝났든 취소됐든 그림은 지움
+    // 그림은 "다시 출제"에 쓰도록 남겨 둠 → 하루 한 번 청소(cleanup)가 안 쓰는 것을 지움
     running.delete(id);
     kick(); // 자리가 났으니 남은 요청 확인
   }
 }
 
 /* ---------- 대기열 확인 (실시간 알림 또는 주기) ---------- */
-let wake = null, checking = false, lastStaleCheck = 0;
+let wake = null, checking = false, lastStaleCheck = 0, lastBeat = 0, lastCleanup = 0;
 function kick() { if (wake) wake(); }
+const BOOTED = new Date().toISOString();
+
+async function housekeeping() {
+  const now = Date.now();
+  if (now - lastBeat > 5 * 60 * 1000) {
+    lastBeat = now;
+    heartbeat({ running: running.size, max: MAX_PARALLEL, since: BOOTED, model: MODEL || "기본" }).catch((e) => log("상태 기록 실패:", e.message));
+  }
+  // 시작 1분 뒤 한 번, 그다음은 하루에 한 번
+  if (!lastCleanup) lastCleanup = now - 24 * 3600 * 1000 + 60 * 1000;
+  if (now - lastCleanup > 24 * 3600 * 1000) {
+    lastCleanup = now;
+    cleanup().then((r) => log(`청소: 자료 비운 요청 ${r.purged}개, 지운 그림 ${r.files}개`)).catch((e) => log("청소 실패:", e.message));
+  }
+}
 
 async function check() {
   if (checking) return;
   checking = true;
+  housekeeping();
   try {
     if (Date.now() - lastStaleCheck > 5 * 60 * 1000) {
       lastStaleCheck = Date.now();

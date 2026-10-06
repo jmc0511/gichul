@@ -538,6 +538,32 @@
     }
   }
 
+  // 같은 자료·같은 조건으로 새 문제 받기 (자료는 끝난 뒤 14일 동안 서버에 남아 있음)
+  async function retryRequest(r, btn) {
+    await loadQuota();
+    if (quotaBlock()) { setStatus(quotaBlock(), true); return; }
+    btn.disabled = true;
+    const id = crypto.randomUUID();
+    const { data, error } = await sb.rpc("retry_request", { src: r.id, new_id: id });
+    if (error || !data) {
+      btn.disabled = false;
+      const code = error && Object.keys(LIMIT_MSG).find((k) => String(error.message || "").includes(k));
+      setStatus(code ? LIMIT_MSG[code] : error ? "요청을 보내지 못했어요. 잠시 후 다시 시도해 주세요." : "자료 보관 기간(14일)이 지나 다시 낼 수 없어요. 자료를 다시 올려 주세요.", true);
+      if (!error) { r.reusable = false; renderLib(); }
+      loadQuota();
+      return;
+    }
+    store("gichul.myreqs", [id, ...myRequestIds()].slice(0, 30));
+    notifyWorker();
+    setStatus("같은 자료로 새 문제를 요청했어요. 앞서 낸 문제와 겹치지 않게 만들어요.");
+    await refresh();
+  }
+  function retryButton(r, label) {
+    const b = el("button", { type: "button", class: "link retry", text: label, title: "자료를 다시 올리지 않고, 같은 범위·같은 조건으로 다른 문제를 받아요" });
+    b.addEventListener("click", () => retryRequest(r, b));
+    return b;
+  }
+
   /* ---------- 실시간 알림 ---------- */
   // 처리기에게 "새 요청 있음"을 바로 알림 (실패해도 처리기가 주기적으로 확인함)
   function notifyWorker() {
@@ -673,11 +699,11 @@
         ? confirmButton("취소", "정말 취소?", () => deleteRequest(r, "요청을 취소했어요."))
         : confirmButton("지우기", "정말 지울까요?", () => deleteRequest(r, "요청을 지웠어요."));
       return el("li", null,
-        el("span", { class: "t", title: name, text: name }),
+        el("span", { class: "t", title: name, text: (r.retry_of ? "↻ " : "") + name }),
         el("span", { class: "pill " + (r.status || "pending"), text: (r.status === "working" && r.progress) || STATUS[r.status] || "대기 중" }),
         el("span", { class: "s row" },
           el("span", { text: when(r.created_at) + (r.status === "error" && r.error ? " · " + r.error : "") }),
-          action));
+          el("span", { class: "acts" }, r.status === "error" && r.reusable ? retryButton(r, "다시 시도") : null, action)));
     }));
     const wrongs = loadWrongs();
     const noteItem = wrongs.length ? el("li", { class: "note-item" + (curExamId === NOTE_ID ? " cur" : "") },
@@ -692,13 +718,15 @@
           renderLib();
         }))) : null;
     $("examList").replaceChildren(...(noteItem ? [noteItem] : []), ...(exams.length ? exams.map((x) => {
-      const mine = requests.some((r) => r.exam_id === x.id);
+      const req = requests.find((r) => r.exam_id === x.id);
       return el("li", { class: x.id === curExamId ? "cur" : "" },
         el("span", { class: "t", title: x.title, text: x.title || "시험지" }),
         el("button", { type: "button", class: "open", text: x.id === curExamId ? "보는 중" : "풀기", onclick: () => openExam(x.id) }),
         el("span", { class: "s row" },
           el("span", { text: `${(x.questions || []).length}문항 · ${when(x.created_at)}` }),
-          mine ? confirmButton("삭제", "정말 삭제?", () => deleteExam(x)) : confirmButton("목록에서 빼기", "정말 뺄까요?", () => deleteExam(x))));
+          el("span", { class: "acts" },
+            req?.reusable ? retryButton(req, "새 문제로 다시") : null,
+            req ? confirmButton("삭제", "정말 삭제?", () => deleteExam(x)) : confirmButton("목록에서 빼기", "정말 뺄까요?", () => deleteExam(x)))));
     }) : noteItem ? [] : [el("li", null, el("span", { class: "s", text: sb ? "아직 시험지가 없어요. 출제를 요청하거나 친구가 보낸 링크를 열면 여기에 쌓입니다." : "사이트 설정 후 이용할 수 있어요." }))]));
   }
 

@@ -196,6 +196,10 @@ button { cursor: pointer; }
 .link.danger { font-family: var(--f-ui); font-size: 12px; white-space: nowrap; }
 .link.danger:hover, .link.danger.armed { color: var(--wrong); }
 .link.danger.armed { font-weight: 700; text-decoration: none; }
+.lib .acts { display: inline-flex; gap: 10px; align-items: center; flex: none; }
+.link.retry { font-family: var(--f-ui); font-size: 12px; white-space: nowrap; color: var(--omr); text-decoration: none; font-weight: 600; }
+.link.retry:hover { text-decoration: underline; }
+.link.retry:disabled { opacity: .45; cursor: wait; }
 /* 답안 수식 미리보기 */
 .math-preview { margin-top: 6px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 6px; font-family: var(--f-exam); display: flex; flex-direction: column; gap: 2px; }
 .math-preview-label { font-family: var(--f-ui); font-size: 11.5px; color: var(--muted); }
