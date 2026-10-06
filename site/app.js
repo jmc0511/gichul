@@ -415,8 +415,8 @@
   let quota = null;
   const LIMIT_MSG = {
     limit_open: "진행 중인 요청이 끝나면 다시 보낼 수 있어요.",
-    limit_daily: "오늘 보낼 수 있는 요청을 다 썼어요. 내일 다시 이용해 주세요.",
-    limit_site: "오늘은 사이트 전체 요청이 마감됐어요. 내일 다시 이용해 주세요."
+    limit_daily: "오늘 보낼 수 있는 요청을 다 썼어요. 밤 12시가 지나면 다시 보낼 수 있어요.",
+    limit_site: "오늘은 사이트 전체 요청이 마감됐어요. 밤 12시가 지나면 다시 열려요."
   };
   function quotaBlock() {
     if (!quota) return null;
@@ -432,7 +432,7 @@
     quota = data;
     const q = $("quota");
     q.hidden = false;
-    q.textContent = `오늘 남은 요청 ${Math.max(0, quota.limit - quota.used)}/${quota.limit}`;
+    q.textContent = `오늘 남은 요청 ${Math.max(0, quota.limit - quota.used)}/${quota.limit} · 매일 0시 초기화`;
     q.classList.toggle("out", !!quotaBlock());
     renderFiles();
   }
