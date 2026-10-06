@@ -1,0 +1,15 @@
+{
+  "name": "기추리 — 내 자료로 뽑는 예상 기출",
+  "short_name": "기추리",
+  "description": "강의노트·슬라이드·필기 사진을 올리면 시험에 나올 법한 예상 기출문제를 만들어 드려요",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#cf3f63",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

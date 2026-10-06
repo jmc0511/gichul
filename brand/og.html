@@ -1,0 +1,27 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700;900&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  html, body { margin: 0; }
+  body { width: 1200px; height: 630px; background: #faf9f5; color: #1a2130; font-family: "Pretendard Variable", sans-serif; overflow: hidden; position: relative; }
+  /* 시험지 느낌의 가는 줄 */
+  body::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(transparent 0 47px, rgba(26,33,48,.05) 47px 48px); }
+  .left { position: absolute; left: 80px; top: 0; bottom: 0; width: 640px; display: flex; flex-direction: column; justify-content: center; gap: 22px; }
+  .kicker { font-size: 26px; font-weight: 700; color: #cf3f63; letter-spacing: .02em; }
+  h1 { margin: 0; font-weight: 800; font-size: 64px; line-height: 1.24; letter-spacing: -.03em; }
+  h1 b { color: #cf3f63; }
+  .sub { font-size: 27px; color: #4a5263; line-height: 1.5; }
+  .url { margin-top: 10px; display: inline-flex; align-self: flex-start; font-size: 26px; font-weight: 700; padding: 10px 22px; border: 3px solid #1a2130; border-radius: 999px; background: #fff; }
+  .right { position: absolute; right: 50px; top: 50%; transform: translateY(-50%); width: 470px; height: 470px; border-radius: 48px; overflow: hidden; background: #fff; box-shadow: 0 2px 0 rgba(26,33,48,.06), 0 18px 40px rgba(26,33,48,.10); }
+  .right img { width: 100%; height: 100%; display: block; }
+</style></head>
+<body>
+  <div class="left">
+    <div class="kicker">족보 없는 과목도 OK</div>
+    <h1>강의자료 넣으면<br><b>예상 기출</b>이 나온다</h1>
+    <div class="sub">PDF · PPT · 필기 사진 → 객관식·OX·서술형 시험지<br>채점부터 오답노트 복습까지</div>
+    <div class="url">gichul.site</div>
+  </div>
+  <div class="right"><img src="icon.png" alt=""></div>
+</body></html>
