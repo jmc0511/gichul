@@ -1,0 +1,27 @@
+# Supabase 무료 플랜은 7일 동안 접속이 없으면 일시정지됨.
+# NAS 처리기가 30초마다 접속하지만, NAS가 오래 꺼져 있을 때를 대비해 GitHub이 하루 한 번 접속.
+# 공개 키(site/config.js)만 쓰므로 비밀 값은 필요 없음.
+name: Supabase 접속 유지
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # 매일 12:17 (한국 시간)
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Supabase에 접속
+        run: |
+          URL=$(grep -oP 'SUPABASE_URL:\s*"\K[^"]+' site/config.js)
+          KEY=$(grep -oP 'SUPABASE_KEY:\s*"\K[^"]+' site/config.js)
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $KEY" -A "gichul-keepalive/1.0" \
+            "$URL/rest/v1/limits?select=*&limit=1")
+          echo "응답 코드: $code"
+          if [ "$code" -ge 500 ] || [ "$code" = "000" ]; then
+            echo "::error::Supabase 응답 없음 — 일시정지됐을 수 있어요. 대시보드에서 Restore 하세요."
+            exit 1
+          fi
