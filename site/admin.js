@@ -1,4 +1,4 @@
-// 출제실 관리 화면: admins 표에 등록된 계정으로 로그인했을 때만 admin_stats() 를 볼 수 있음
+// 기추리 관리 화면: admins 표에 등록된 계정으로 로그인했을 때만 admin_stats() 를 볼 수 있음
 (function () {
   const $ = (id) => document.getElementById(id);
   const cfg = window.GICHUL_CONFIG || {};
