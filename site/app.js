@@ -31,7 +31,13 @@
     open: {},
     graded: false,
     round: 0,          // 채점 회차 (오답노트에서 같은 채점을 두 번 세지 않도록)
-    busy: false
+    busy: false,
+    timer: null,       // 시험 모드 { endAt, startedAt, mins }
+    timerPick: false,  // 시간 고르는 칸 열림
+    elapsed: null,     // 시험 모드로 푼 시간(ms)
+    reportOpen: {},    // 신고 칸이 열린 문제
+    rank: null,        // 순위 { list, submitted }
+    printKey: null     // 인쇄 중: true 정답 포함 / false 문제만
   };
 
   /* ---------- Supabase ---------- */
@@ -114,7 +120,7 @@
     ["gichul.myreqs", "gichul.myexams", "gichul.wrongs", "gichul.synced_user"].forEach((k) => { try { localStorage.removeItem(k); } catch (e) {} });
     applyingRemote = false;
     requests = []; exams = [];
-    if (curExamId) { state.exam = EXAMPLE; state.isExample = true; curExamId = null; state.answers = {}; state.graded = false; persist(); renderAll(); }
+    if (curExamId) { state.exam = EXAMPLE; state.isExample = true; curExamId = null; resetRun(); persist(); renderAll(); }
     setStatus("로그아웃했어요. 다시 로그인하면 내 시험지와 오답노트가 돌아와요.");
     renderLib();
   }
@@ -166,11 +172,18 @@
     }
   }
   function load(key, fallback) { try { const v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v; } catch (e) { return fallback; } }
-  function persist() { store("gichul.exam", { exam: state.exam, isExample: state.isExample, answers: state.answers, examId: curExamId }); }
+  // 시험지를 바꾸거나 처음부터 다시 풀 때: 답·채점·시험 모드·순위를 모두 비움
+  function resetRun() {
+    state.answers = {}; state.self = {}; state.open = {}; state.graded = false;
+    state.timer = null; state.timerPick = false; state.elapsed = null; state.reportOpen = {}; state.rank = null;
+    clearInterval(tickTimer);
+  }
+  function persist() { store("gichul.exam", { exam: state.exam, isExample: state.isExample, answers: state.answers, examId: curExamId, timer: state.timer }); }
   function restore() {
     const d = load("gichul.exam", null);
     if (!d || !d.exam || !Array.isArray(d.exam.questions)) return false;
     state.exam = d.exam; state.isExample = !!d.isExample; state.answers = d.answers || {}; curExamId = d.examId || null;
+    state.timer = d.timer && d.timer.endAt ? d.timer : null;
     return true;
   }
   const myRequestIds = () => load("gichul.myreqs", []);
@@ -269,8 +282,10 @@
   }
   // PPTX 속 그림 파일을 JPEG로 (크면 줄임)
   async function mediaToJpeg(zipFile) {
-    const blob = await zipFile.async("blob");
-    const bmp = await createImageBitmap(blob);
+    return blobToJpeg(await zipFile.async("blob"));
+  }
+  async function blobToJpeg(blob) {
+    const bmp = await createImageBitmap(blob, { imageOrientation: "from-image" });
     const s = Math.min(1, IMG_MAX_W / bmp.width);
     const c = document.createElement("canvas");
     c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
@@ -322,14 +337,26 @@
     return { pages, visuals, kind: "pptx", scanned: chars / pages.length < 15 };
   }
 
+  /* 사진(필기 노트·교재 사진): 글자는 Claude가 그림으로 직접 읽음 */
+  async function readImage(file) {
+    let bmp;
+    try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+    catch (e) { throw new Error(/hei[cf]/i.test(file.name + file.type) ? "heic" : "image"); }
+    bmp.close?.();
+    return { pages: [""], visuals: [{ page: 0, score: 1000, render: () => blobToJpeg(file) }], kind: "image", scanned: true };
+  }
+  // 자료 안에서 쪽을 부르는 이름
+  const pageName = (f, i) => f.kind === "pptx" ? `슬라이드 ${i + 1}` : f.kind === "image" ? "사진" : `p.${i + 1}`;
+
   const isPdf = (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
   const isPptx = (f) => /\.pptx$/i.test(f.name);
+  const isImage = (f) => /^image\//i.test(f.type) || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name);
 
   async function addFiles(list) {
-    const files = [...list].filter((f) => isPdf(f) || isPptx(f));
+    const files = [...list].filter((f) => isPdf(f) || isPptx(f) || isImage(f));
     if (!files.length) {
       const old = [...list].some((f) => /\.ppt$/i.test(f.name));
-      setStatus(old ? "예전 형식(.ppt)은 읽을 수 없어요. PowerPoint에서 .pptx나 PDF로 저장해서 올려 주세요." : "PDF나 PPTX 파일만 올릴 수 있습니다.", true);
+      setStatus(old ? "예전 형식(.ppt)은 읽을 수 없어요. PowerPoint에서 .pptx나 PDF로 저장해서 올려 주세요." : "PDF, PPTX, 사진(JPG·PNG) 파일만 올릴 수 있어요.", true);
       return;
     }
     for (const f of files) {
@@ -340,13 +367,17 @@
         if (isPptx(f)) {
           if (!window.JSZip) throw new Error("no jszip");
           Object.assign(item, await readPptx(f), { loading: false });
+        } else if (isImage(f)) {
+          Object.assign(item, await readImage(f), { loading: false });
         } else {
           if (!window.pdfjsLib) throw new Error("no pdfjs");
           Object.assign(item, await readPdf(f), { loading: false });
         }
       } catch (e) {
         state.files = state.files.filter((x) => x !== item);
-        setStatus(`"${f.name}"을(를) 읽지 못했습니다. 암호가 걸려 있거나 손상된 파일일 수 있습니다.`, true);
+        setStatus(e?.message === "heic"
+          ? `"${f.name}"은(는) 아이폰 HEIC 사진이라 이 브라우저에서 못 읽어요. JPG로 바꿔 올리거나, 아이폰 설정 > 카메라 > 포맷 > '높은 호환성'으로 찍어 주세요.`
+          : `"${f.name}"을(를) 읽지 못했습니다. 암호가 걸려 있거나 손상된 파일일 수 있습니다.`, true);
       }
       renderFiles();
     }
@@ -356,8 +387,8 @@
     $("files").replaceChildren(...state.files.map((f) => {
       let meta = "읽는 중…";
       if (!f.loading) {
-        meta = f.pages.length + (f.kind === "pptx" ? "장" : "쪽");
-        if (f.scanned) meta += " · 스캔본";
+        meta = f.kind === "image" ? "사진" : f.pages.length + (f.kind === "pptx" ? "장" : "쪽");
+        if (f.scanned && f.kind !== "image") meta += " · 스캔본";
         else if (f.visuals.length) meta += ` · 그림 ${f.visuals.length}`;
       }
       return el("li", null,
@@ -416,7 +447,7 @@
       .sort((a, b) => a.fi - b.fi || a.page - b.page || a.vi - b.vi);
     chosen.forEach((c, k) => {
       c.no = k + 1;
-      c.label = `${c.f.name} ${c.f.kind === "pptx" ? "슬라이드 " : "p."}${c.page + 1}`;
+      c.label = c.f.kind === "image" ? `${c.f.name} (사진)` : `${c.f.name} ${pageName(c.f, c.page)}`;
     });
     return chosen;
   }
@@ -427,7 +458,7 @@
       const nos = images.filter((c) => c.f === f && c.page === i).map((c) => "#" + c.no);
       return nos.length ? `\n[이 쪽의 그림: 첨부 이미지 ${nos.join(", ")}]` : "";
     };
-    const blocks = ready.map((f) => ({ name: f.name, text: f.pages.map((p, i) => `[${f.kind === "pptx" ? "슬라이드 " : "p."}${i + 1}]\n${p}${tag(f, i)}`).join("\n\n") }));
+    const blocks = ready.map((f) => ({ name: f.name, text: f.pages.map((p, i) => `[${pageName(f, i)}]\n${p}${tag(f, i)}`).join("\n\n") }));
     const total = blocks.reduce((a, b) => a + b.text.length, 0);
     const ratio = total > TEXT_BUDGET ? TEXT_BUDGET / total : 1;
     return blocks.map((b) => `===== 자료: ${b.name} =====\n` + (ratio < 1 ? b.text.slice(0, Math.floor(b.text.length * ratio)) + "\n(…이하 생략)" : b.text)).join("\n\n");
@@ -487,6 +518,7 @@
 
   async function submitRequest() {
     if (!document.querySelectorAll('input[name="type"]:checked').length) { setStatus("문제 유형을 하나 이상 고르세요.", true); return; }
+    askNotify();
     const picked = pickImages();
     const material = buildMaterial(picked);
     const hasText = state.files.some((f) => !f.loading && f.pages.some((p) => p.trim()));
@@ -540,6 +572,7 @@
 
   // 같은 자료·같은 조건으로 새 문제 받기 (자료는 끝난 뒤 14일 동안 서버에 남아 있음)
   async function retryRequest(r, btn) {
+    askNotify();
     await loadQuota();
     if (quotaBlock()) { setStatus(quotaBlock(), true); return; }
     btn.disabled = true;
@@ -558,6 +591,34 @@
     setStatus("같은 자료로 새 문제를 요청했어요. 앞서 낸 문제와 겹치지 않게 만들어요.");
     await refresh();
   }
+  // 이 시험지를 만든 내 요청 ('문제 다시' 요청 말고 원래 요청)
+  const ownRequest = (examId) => requests.find((r) => r.exam_id === examId && r.regen_exam == null);
+  const regenPending = (examId) => requests.find((r) => r.regen_exam === examId && (r.status === "pending" || r.status === "working"));
+
+  // 시험지의 문제 하나만 새로 받기
+  async function regenQuestion(q, pos) {
+    const src = ownRequest(curExamId);
+    if (!src || !Number.isInteger(q._i)) return;
+    askNotify();
+    await loadQuota();
+    if (quotaBlock()) { setStatus(quotaBlock(), true); renderSheet(); return; }
+    const id = crypto.randomUUID();
+    const { data, error } = await sb.rpc("regen_question", { src: src.id, idx: q._i, new_id: id });
+    if (error || !data) {
+      const m = String(error?.message || "");
+      const code = Object.keys(LIMIT_MSG).find((k) => m.includes(k));
+      setStatus(m.includes("regen_busy") ? "이 시험지에서 이미 다른 문제를 바꾸는 중이에요. 끝나면 다시 눌러 주세요."
+        : code ? LIMIT_MSG[code] : error ? "요청을 보내지 못했어요. 잠시 후 다시 시도해 주세요." : "자료 보관 기간(14일)이 지나 문제를 바꿀 수 없어요.", true);
+      renderSheet();
+      return;
+    }
+    store("gichul.myreqs", [id, ...myRequestIds()].slice(0, 30));
+    notifyWorker();
+    setStatus(`${pos + 1}번 문제를 새로 만드는 중이에요. 보통 1분 안팎 걸려요.`);
+    await refresh();
+    renderSheet();
+  }
+
   function retryButton(r, label) {
     const b = el("button", { type: "button", class: "link retry", text: label, title: "자료를 다시 올리지 않고, 같은 범위·같은 조건으로 다른 문제를 받아요" });
     b.addEventListener("click", () => retryRequest(r, b));
@@ -599,14 +660,13 @@
     if (!sb) return;
     const ids = myRequestIds();
     try {
+      let finished = [];
       if (ids.length) {
         const rq = await sb.rpc("get_requests", { ids });
         if (!rq.error) {
           const before = new Map(requests.map((r) => [r.id, r.status]));
           requests = rq.data || [];
-          if (requests.some((r) => r.status === "done" && before.get(r.id) && before.get(r.id) !== "done") && !state.busy) {
-            setStatus("요청한 시험지가 완성됐어요. 문제집에서 열어 보세요.");
-          }
+          finished = requests.filter((r) => (r.status === "done" || r.status === "error") && before.get(r.id) && before.get(r.id) !== r.status);
         }
       }
       // 내 요청으로 만들어진 시험지 + 링크로 받아서 열어 본 시험지
@@ -615,11 +675,50 @@
         const ex = await sb.rpc("get_exams", { ids: examIds });
         if (!ex.error) exams = ex.data || [];
       }
+      for (const r of finished) announceFinished(r);
     } catch (e) {}
     renderLib();
     syncChannels();
     loadQuota();
     schedulePoll();
+  }
+
+  /* ---------- 완료 알림 ---------- */
+  const BASE_TITLE = document.title;
+  function askNotify() {
+    try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (e) {}
+  }
+  function announceFinished(r) {
+    const ok = r.status === "done";
+    const isRegen = r.regen_exam != null;
+    const name = r.subject || (r.files || []).join(", ") || "요청한 시험지";
+    const msg = !ok ? `"${name}" 출제에 실패했어요. 문제집에서 다시 시도할 수 있어요.`
+      : isRegen ? `${r.regen_idx + 1}번 문제를 새 문제로 바꿨어요.`
+      : `"${name}" 시험지가 완성됐어요. 문제집에서 열어 보세요.`;
+    if (!state.busy) setStatus(msg, !ok);
+    // 보고 있던 시험지의 문제가 바뀌었으면 그 문제만 새로 그림
+    if (ok && isRegen && curExamId === r.regen_exam) reloadExam(r.regen_exam, r.regen_idx);
+    if (!document.hidden) return;
+    document.title = (ok ? "✅ " : "⚠️ ") + (isRegen ? "문제 교체 완료" : ok ? "시험지 완성" : "출제 실패") + " · " + BASE_TITLE;
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        const n = new Notification(ok ? (isRegen ? "문제를 바꿨어요" : "시험지가 완성됐어요") : "출제에 실패했어요", { body: ok && !isRegen ? name : msg, tag: "gichuri-" + r.id });
+        n.onclick = () => { window.focus(); if (ok && r.exam_id) openExam(r.exam_id); n.close(); };
+      }
+    } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) document.title = BASE_TITLE; });
+
+  // 시험지를 다시 받아 오되, 바뀐 문제 말고는 푼 답을 그대로 둠
+  function reloadExam(id, changedIdx) {
+    const d = exams.find((x) => x.id === id);
+    if (!d) return;
+    const fresh = normalize(d);
+    const pos = fresh.questions.findIndex((q) => q._i === changedIdx);
+    state.exam = fresh;
+    if (pos >= 0) { delete state.answers[pos]; delete state.self[pos]; delete state.open[pos]; }
+    persist(); renderAll();
+    if (pos >= 0) $("q" + pos)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   function schedulePoll() {
@@ -633,7 +732,7 @@
     if (!d) { refresh(); return; }
     state.exam = normalize(d);
     state.isExample = false; curExamId = id;
-    state.answers = {}; state.self = {}; state.open = {}; state.graded = false;
+    resetRun();
     persist(); renderAll(); renderLib();
     $("sheet").scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -662,7 +761,7 @@
   function closeExamIfOpen(examId) {
     if (examId && examId === curExamId) {
       state.exam = EXAMPLE; state.isExample = true; curExamId = null;
-      state.answers = {}; state.self = {}; state.open = {}; state.graded = false;
+      resetRun();
       persist(); renderAll();
     }
   }
@@ -679,7 +778,7 @@
 
   // 내 시험지 삭제: 내가 요청한 것이면 DB에서, 링크로 받은 것이면 내 목록에서만
   async function deleteExam(x) {
-    const mine = requests.find((r) => r.exam_id === x.id);
+    const mine = ownRequest(x.id);
     if (mine) return deleteRequest(mine, "시험지를 삭제했어요.");
     store("gichul.myexams", myExamIds().filter((id) => id !== x.id));
     exams = exams.filter((e) => e.id !== x.id);
@@ -693,7 +792,8 @@
     const visible = requests.filter((r) => r.status !== "done").slice(0, 10);
     $("reqHead").hidden = !visible.length;
     $("reqList").replaceChildren(...visible.map((r) => {
-      const name = r.subject || (Array.isArray(r.files) ? r.files.join(", ") : "요청");
+      const base = r.subject || (Array.isArray(r.files) ? r.files.join(", ") : "요청");
+      const name = r.regen_exam != null ? `${r.regen_idx + 1}번 문제 다시 · ${base}` : base;
       const live = r.status === "pending" || r.status === "working";
       const action = live
         ? confirmButton("취소", "정말 취소?", () => deleteRequest(r, "요청을 취소했어요."))
@@ -703,22 +803,11 @@
         el("span", { class: "pill " + (r.status || "pending"), text: (r.status === "working" && r.progress) || STATUS[r.status] || "대기 중" }),
         el("span", { class: "s row" },
           el("span", { text: when(r.created_at) + (r.status === "error" && r.error ? " · " + r.error : "") }),
-          el("span", { class: "acts" }, r.status === "error" && r.reusable ? retryButton(r, "다시 시도") : null, action)));
+          el("span", { class: "acts" }, r.status === "error" && r.reusable && r.regen_exam == null ? retryButton(r, "다시 시도") : null, action)));
     }));
-    const wrongs = loadWrongs();
-    const noteItem = wrongs.length ? el("li", { class: "note-item" + (curExamId === NOTE_ID ? " cur" : "") },
-      el("span", { class: "t", text: `오답노트 · ${wrongs.length}문항` }),
-      el("button", { type: "button", class: "open", text: curExamId === NOTE_ID ? "보는 중" : "다시 풀기", onclick: openWrongNote }),
-      el("span", { class: "s row" },
-        el("span", { text: "채점에서 틀린 문제 모음 · 맞히면 빠져요" }),
-        confirmButton("비우기", "정말 비울까요?", () => {
-          saveWrongs([]);
-          if (curExamId === NOTE_ID) { state.exam = EXAMPLE; state.isExample = true; curExamId = null; state.answers = {}; state.self = {}; state.graded = false; persist(); renderAll(); }
-          setStatus("오답노트를 비웠어요.");
-          renderLib();
-        }))) : null;
+    const noteItem = renderNoteItem();
     $("examList").replaceChildren(...(noteItem ? [noteItem] : []), ...(exams.length ? exams.map((x) => {
-      const req = requests.find((r) => r.exam_id === x.id);
+      const req = ownRequest(x.id);
       return el("li", { class: x.id === curExamId ? "cur" : "" },
         el("span", { class: "t", title: x.title, text: x.title || "시험지" }),
         el("button", { type: "button", class: "open", text: x.id === curExamId ? "보는 중" : "풀기", onclick: () => openExam(x.id) }),
@@ -732,9 +821,10 @@
 
   /* ---------- 시험지 데이터 정리 ---------- */
   function normalize(data) {
-    const qs = (data && Array.isArray(data.questions) ? data.questions : []).map((q) => {
+    const qs = (data && Array.isArray(data.questions) ? data.questions : []).map((q, rawIdx) => {
       const type = ["mc", "ox", "short", "essay"].includes(q.type) ? q.type : (Array.isArray(q.choices) && q.choices.length ? "mc" : "short");
       const out = {
+        _i: rawIdx,   // DB 시험지 안의 원래 번호 (신고·문제 다시에 씀)
         type,
         question: String(q.question || "").trim(),
         explanation: String(q.explanation || "").trim(),
@@ -771,51 +861,113 @@
     for (let k = 0; k < s.length; k++) h = ((h << 5) + h + s.charCodeAt(k)) | 0;
     return (h >>> 0).toString(36);
   }
-  // 채점 결과를 오답노트에 반영: 틀린 문제는 넣고, 오답노트에서 다시 맞힌 문제는 뺌
+  /* 복습 주기: 틀리면 오늘 바로 → 오답노트에서 맞히면 1일 뒤 → 또 맞히면 3일 뒤 → 또 맞히면 졸업(빠짐).
+     오답노트에서 또 틀리면 처음부터(내일 다시). */
+  const DAY = 864e5;
+  const REVIEW_GAP = [0, 1, 3];   // stage 별 다음 복습까지 날짜
+  const GRADUATE = 3;
+  const tomorrow = () => { const d = new Date(); d.setHours(24, 0, 0, 0); return d.getTime(); };
+  const isDue = (w) => !w.due || w.due <= Date.now();
+  const subjectOf = (w) => w.subject || "과목 없음";
+
+  // 채점 결과를 오답노트에 반영
   function recordResults() {
     if (!state.exam || state.isExample || !state.graded) return;
     const inNote = curExamId === NOTE_ID;
     let wrongs = loadWrongs();
-    let added = 0, cleared = 0;
+    let added = 0, moved = 0, graduated = 0;
     state.exam.questions.forEach((q, i) => {
       // 객관식·OX는 채점하면 바로 판정(안 고른 것도 틀림), 단답·서술은 맞음/틀림을 표시해야 판정
       const decided = q.type === "mc" || q.type === "ox" || state.self[i] != null;
       if (!decided) return;
       const key = q._key || qKey(q);
       const idx = wrongs.findIndex((w) => w.key === key);
+      const w = wrongs[idx];
       if (!isRight(i)) {
-        if (idx >= 0) {
-          // 같은 채점에서 두 번 세지 않도록 시험지·채점 회차로 구분
-          if (wrongs[idx].lastRound !== state.round) { wrongs[idx].count++; wrongs[idx].lastRound = state.round; }
+        if (w) {
+          // 같은 채점에서 두 번 세지 않도록 채점 회차로 구분
+          if (w.lastRound !== state.round) { w.count++; w.lastRound = state.round; }
+          w.stage = 0;
+          w.due = inNote ? tomorrow() : Date.now();
         } else {
-          const { _key, _from, ...clean } = q;
-          wrongs.unshift({ key, from: q._from || state.exam.title, q: clean, count: 1, at: Date.now(), lastRound: state.round });
+          const { _key, _from, _count, _exam, _i, _subject, _stage, ...clean } = q;
+          wrongs.unshift({
+            key, from: q._from || state.exam.title, subject: state.exam.subject || "",
+            exam: curExamId, idx: Number.isInteger(_i) ? _i : null,
+            q: clean, count: 1, at: Date.now(), lastRound: state.round, stage: 0, due: Date.now()
+          });
           added++;
         }
-      } else if (idx >= 0 && (inNote || (wrongs[idx].lastRound === state.round && wrongs[idx].count === 1))) {
-        // 오답노트에서 맞혔거나, 방금 '틀림'으로 눌렀다가 '맞음'으로 고친 경우
+      } else if (w && inNote) {
+        if (w.lastRound === state.round) return; // 이번 채점에서 이미 반영함
+        w.lastRound = state.round;
+        w.stage = (w.stage || 0) + 1;
+        if (w.stage >= GRADUATE) { wrongs.splice(idx, 1); graduated++; }
+        else { w.due = Date.now() + REVIEW_GAP[w.stage] * DAY; moved++; }
+      } else if (w && w.lastRound === state.round && w.count === 1) {
+        // 방금 '틀림'으로 눌렀다가 '맞음'으로 고친 경우
         wrongs.splice(idx, 1);
-        if (inNote) cleared++;
       }
     });
     saveWrongs(wrongs);
     if (added) setStatus(`틀린 문제 ${added}개를 오답노트에 넣었어요.`);
-    else if (cleared) setStatus(`맞힌 문제 ${cleared}개를 오답노트에서 뺐어요.`);
+    else if (moved || graduated) setStatus([moved ? `${moved}개는 며칠 뒤 다시 복습` : "", graduated ? `${graduated}개는 오답노트 졸업!` : ""].filter(Boolean).join(" · "));
     renderLib();
   }
 
-  function openWrongNote() {
-    const wrongs = loadWrongs();
-    if (!wrongs.length) return;
+  // filter: { due: 오늘 복습할 것만, subject: 과목 }
+  let noteFilter = { due: true, subject: "" };
+  function openWrongNote(filter) {
+    if (filter) noteFilter = { ...noteFilter, ...filter };
+    const all = loadWrongs();
+    let list = all.filter((w) => !noteFilter.subject || subjectOf(w) === noteFilter.subject);
+    if (noteFilter.due) list = list.filter(isDue);
+    if (!list.length) {
+      setStatus(noteFilter.due ? "오늘 복습할 문제를 다 풀었어요. 전체 풀기로 미리 볼 수도 있어요." : "오답노트가 비었어요.");
+      renderLib();
+      return false;
+    }
     state.exam = {
-      title: "오답노트",
-      subject: `틀린 문제 ${wrongs.length}개 다시 풀기`,
-      questions: wrongs.map((w) => ({ ...w.q, _key: w.key, _from: w.from, _count: w.count }))
+      title: "오답노트" + (noteFilter.subject ? " · " + noteFilter.subject : ""),
+      subject: noteFilter.due ? `오늘 복습 ${list.length}문항` : `전체 ${list.length}문항`,
+      questions: list.map((w) => ({ ...w.q, _key: w.key, _from: w.from, _count: w.count, _exam: w.exam, _i: w.idx, _stage: w.stage || 0 }))
     };
     state.isExample = false; curExamId = NOTE_ID;
-    state.answers = {}; state.self = {}; state.open = {}; state.graded = false;
+    resetRun();
     persist(); renderAll(); renderLib();
     $("sheet").scrollIntoView({ behavior: "smooth", block: "start" });
+    return true;
+  }
+
+  function renderNoteItem() {
+    const wrongs = loadWrongs();
+    if (!wrongs.length) return null;
+    const subjects = [...new Set(wrongs.map(subjectOf))];
+    if (noteFilter.subject && !subjects.includes(noteFilter.subject)) noteFilter.subject = "";
+    const pool = wrongs.filter((w) => !noteFilter.subject || subjectOf(w) === noteFilter.subject);
+    const due = pool.filter(isDue).length;
+    const nextDue = pool.filter((w) => !isDue(w)).map((w) => w.due).sort((a, b) => a - b)[0];
+    const viewing = curExamId === NOTE_ID;
+    const sub = due ? `오늘 복습 ${due}문항 · 맞히면 1일·3일 뒤 다시, 3번 맞히면 졸업`
+      : nextDue ? `오늘 복습 끝! 다음 복습 ${new Date(nextDue).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}` : "";
+    const picker = subjects.length > 1 ? el("select", { class: "note-subject", "aria-label": "과목 고르기",
+      onchange: (e) => { noteFilter.subject = e.target.value; renderLib(); } },
+      el("option", { value: "", text: `전체 과목 (${wrongs.length})` }),
+      ...subjects.map((s) => { const o = el("option", { value: s, text: `${s} (${wrongs.filter((w) => subjectOf(w) === s).length})` }); o.selected = s === noteFilter.subject; return o; })) : null;
+    return el("li", { class: "note-item" + (viewing ? " cur" : "") },
+      el("span", { class: "t", text: `오답노트 · ${pool.length}문항` }),
+      el("button", { type: "button", class: "open", text: due ? `오늘 복습 ${due}` : "전체 풀기", onclick: () => openWrongNote({ due: !!due }) }),
+      picker ? el("span", { class: "s" }, picker) : null,
+      el("span", { class: "s row" },
+        el("span", { text: sub }),
+        el("span", { class: "acts" },
+          due ? el("button", { type: "button", class: "link retry", text: "전체 풀기", onclick: () => openWrongNote({ due: false }) }) : null,
+          confirmButton("비우기", noteFilter.subject ? "이 과목 비울까요?" : "정말 비울까요?", () => {
+            saveWrongs(noteFilter.subject ? wrongs.filter((w) => subjectOf(w) !== noteFilter.subject) : []);
+            if (viewing) { state.exam = EXAMPLE; state.isExample = true; curExamId = null; resetRun(); persist(); renderAll(); }
+            setStatus("오답노트를 비웠어요.");
+            renderLib();
+          }))));
   }
 
   /* ---------- 채점 ---------- */
@@ -838,17 +990,25 @@
     if (!ex) { sheet.replaceChildren(el("p", { class: "empty", text: "공부자료를 올리고 출제하면 여기에 시험지가 나타납니다." })); return; }
     const total = ex.questions.reduce((a, q) => a + q.points, 0);
     const nodes = [];
-    if (state.isExample) nodes.push(el("div", { class: "ex-flag", text: "예시 시험지 · PDF를 올려 내 자료로 출제하세요" }));
-    else if (curExamId && curExamId !== NOTE_ID && sb) nodes.push(el("div", { class: "sheet-tools" }, el("button", { type: "button", class: "btn", text: "링크 복사", onclick: copyLink })));
+    if (state.isExample) nodes.push(el("div", { class: "ex-flag", text: "예시 시험지 · 자료를 올려 내 자료로 출제하세요" }));
+    const tools = [];
+    if (!state.graded && !state.timer) tools.push(el("button", { type: "button", class: "btn", text: "⏱ 시험 모드", "aria-expanded": state.timerPick ? "true" : "false", onclick: () => { state.timerPick = !state.timerPick; renderSheet(); } }));
+    if (realExam()) tools.push(el("button", { type: "button", class: "btn", text: "링크 복사", onclick: copyLink }));
+    if (tools.length) nodes.push(el("div", { class: "sheet-tools" }, ...tools));
+    if (state.timerPick && !state.timer && !state.graded) nodes.push(timerPicker(ex));
+    if (state.timer) nodes.push(el("div", { class: "exam-bar", role: "status" },
+      el("span", null, "시험 중 · 남은 시간 ", el("b", { class: "timer-left", text: timeLeft() })),
+      el("span", { class: "exam-bar-note", text: "해설은 채점 후에 볼 수 있어요" }),
+      el("button", { type: "button", class: "btn primary", text: "시험 끝내기", onclick: grade })));
     nodes.push(
       el("div", { class: "sheet-head" },
-        el("div", { class: "kicker", text: (ex.subject || "예상 기출") + " · 문제지" }),
+        el("div", { class: "kicker", text: (ex.subject || "예상 기출") + (state.printKey ? " · 문제지 · 정답 포함" : " · 문제지") }),
         el("h2", { text: ex.title })),
       el("div", { class: "sheet-meta" },
         el("span", null, "문항 수 ", el("span", { class: "tn", text: String(ex.questions.length) }), " · 배점 ", el("span", { class: "tn", text: total + "점" })),
-        el("span", null, "성명 ", el("span", { class: "blank" }), "  학번 ", el("span", { class: "blank" }))),
-      el("div", { class: "questions" }, ...ex.questions.map((q, i) => renderQ(q, i)))
-    );
+        el("span", null, "성명 ", el("span", { class: "blank" }), "  학번 ", el("span", { class: "blank" }))));
+    if (state.graded && realExam()) nodes.push(renderRank());
+    nodes.push(el("div", { class: "questions" }, ...ex.questions.map((q, i) => renderQ(q, i))));
     sheet.replaceChildren(...nodes);
     renderMath(sheet);
     sheet.querySelectorAll("textarea.write").forEach(autoGrow);
@@ -923,12 +1083,185 @@
       art.append(ta, preview);
       updatePreview();
     }
-    if (state.open[i] || state.graded) art.append(renderSol(q, i));
-    if (!state.graded) {
-      art.append(el("div", { class: "q-tools" }, el("button", { type: "button", class: "link", text: state.open[i] ? "해설 접기" : "정답·해설 보기", onclick: () => { state.open[i] = !state.open[i]; renderSheet(); } })));
+    if (state.printKey || ((state.open[i] || state.graded) && !state.timer)) art.append(renderSol(q, i));
+    const tools = [];
+    if (!state.graded && !state.timer) {
+      tools.push(el("button", { type: "button", class: "link", text: state.open[i] ? "해설 접기" : "정답·해설 보기", onclick: () => { state.open[i] = !state.open[i]; renderSheet(); } }));
     }
+    // 내가 만든 시험지면 이 문제만 새로 받기
+    const own = !state.timer && curExamId && curExamId !== NOTE_ID && Number.isInteger(q._i) ? ownRequest(curExamId) : null;
+    if (own?.reusable) {
+      const busy = regenPending(curExamId);
+      if (busy && busy.regen_idx === q._i) tools.push(el("span", { class: "q-busy", text: (busy.status === "working" && busy.progress ? busy.progress.replace(/문항 \d+\/\d+ /, "") : "새 문제 만드는 중") + "…" }));
+      else if (!busy) {
+        const b = confirmButton("이 문제 다시", "새 문제로 바꿀까요?", () => regenQuestion(q, i));
+        b.classList.add("q-regen");
+        tools.push(b);
+      }
+    }
+    const target = !state.timer ? reportTarget(q) : null;
+    if (target) {
+      tools.push(isReported(target) ? el("span", { class: "q-busy", text: "신고함" })
+        : el("button", { type: "button", class: "link", text: state.reportOpen[i] ? "신고 닫기" : "문제 신고", onclick: () => { state.reportOpen[i] = !state.reportOpen[i]; renderSheet(); } }));
+    }
+    if (tools.length) art.append(el("div", { class: "q-tools" }, ...tools));
+    if (target && state.reportOpen[i] && !isReported(target)) art.append(reportForm(q, i, target));
     return art;
   }
+
+  /* ---------- 문제 신고 ---------- */
+  const REPORT_REASONS = ["정답이 틀려요", "해설이 이상해요", "문제가 애매해요", "자료에 없는 내용", "기타"];
+  function reportTarget(q) {
+    const exam = q._exam || (curExamId !== NOTE_ID ? curExamId : null);
+    return sb && !state.isExample && exam && UUID_RE.test(exam) && Number.isInteger(q._i) ? { exam, idx: q._i } : null;
+  }
+  const reportedKey = (t) => t.exam + ":" + t.idx;
+  const isReported = (t) => load("gichul.reported", []).includes(reportedKey(t));
+  function markReported(t) { store("gichul.reported", [reportedKey(t), ...load("gichul.reported", [])].slice(0, 500)); }
+  function dropFromWrongs(q) {
+    const key = q._key || qKey(q);
+    const w = loadWrongs();
+    const rest = w.filter((x) => x.key !== key);
+    if (rest.length === w.length) return false;
+    saveWrongs(rest); renderLib();
+    return true;
+  }
+  function reportForm(q, i, t) {
+    let reason = REPORT_REASONS[0];
+    const note = el("textarea", { class: "report-note", maxlength: "500", rows: "2", placeholder: "어디가 이상한지 적어 주면 고치기 쉬워요 (선택)", "aria-label": "신고 내용" });
+    const chips = el("div", { class: "seg", role: "radiogroup", "aria-label": "신고 이유" }, ...REPORT_REASONS.map((r, k) => {
+      const inp = el("input", { type: "radio", name: "report" + i, value: r });
+      inp.checked = k === 0;
+      inp.addEventListener("change", () => { reason = r; });
+      return el("label", null, inp, el("span", { text: r }));
+    }));
+    const send = el("button", { type: "button", class: "btn primary", text: "신고 보내기" });
+    send.addEventListener("click", async () => {
+      send.disabled = true;
+      const { data, error } = await sb.rpc("report_question", { exam: t.exam, idx: t.idx, reason, note: note.value.trim() || null });
+      if (error || !data) {
+        send.disabled = false;
+        setStatus(String(error?.message || "").includes("limit_report") ? "오늘은 신고를 더 보낼 수 없어요." : "신고를 보내지 못했어요. 잠시 후 다시 시도해 주세요.", true);
+        return;
+      }
+      markReported(t);
+      const dropped = dropFromWrongs(q);
+      delete state.reportOpen[i];
+      setStatus("신고했어요. 확인해서 고칠게요." + (dropped ? " 이 문제는 오답노트에서 뺐어요." : ""));
+      renderSheet();
+    });
+    return el("div", { class: "report" },
+      el("p", { class: "report-h", text: "이 문제의 어떤 점이 이상한가요?" }), chips, note,
+      el("div", { class: "report-actions" }, send,
+        el("button", { type: "button", class: "link", text: "닫기", onclick: () => { delete state.reportOpen[i]; renderSheet(); } })));
+  }
+
+  /* ---------- 시험 모드 (제한 시간) ---------- */
+  let tickTimer = null;
+  const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+  const timeLeft = () => state.timer ? mmss(state.timer.endAt - Date.now()) : "";
+  function timerPicker(ex) {
+    const suggest = Math.min(120, Math.max(5, Math.round((ex.questions.length * 1.5) / 5) * 5));
+    const opts = [...new Set([suggest, 10, 20, 30, 50, 60])].sort((a, b) => a - b);
+    return el("div", { class: "timer-pick" },
+      el("p", { text: "제한 시간을 고르면 바로 시작해요. 시간이 끝나면 자동으로 채점하고, 그 전에는 해설을 볼 수 없어요." }),
+      el("div", { class: "seg" }, ...opts.map((m) => el("button", { type: "button", class: "chip" + (m === suggest ? " on" : ""), onclick: () => startTimer(m) }, `${m}분`, m === suggest ? el("small", { text: " 추천" }) : null))));
+  }
+  function startTimer(mins) {
+    const now = Date.now();
+    state.timer = { endAt: now + mins * 60000, startedAt: now, mins };
+    state.timerPick = false; state.answers = {}; state.self = {}; state.open = {}; state.reportOpen = {}; state.elapsed = null;
+    persist(); renderAll(); ensureTick();
+    $("sheet").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function ensureTick() {
+    clearInterval(tickTimer);
+    if (!state.timer) return;
+    const tick = () => {
+      if (!state.timer) { clearInterval(tickTimer); return; }
+      const left = state.timer.endAt - Date.now();
+      document.querySelectorAll(".timer-left").forEach((n) => { n.textContent = mmss(left); n.classList.toggle("low", left < 60000); });
+      if (left <= 0) { clearInterval(tickTimer); grade(); setStatus("시간이 끝나서 자동으로 채점했어요."); }
+    };
+    tick();
+    tickTimer = setInterval(tick, 1000);
+  }
+
+  /* ---------- 친구와 점수 비교 ---------- */
+  const realExam = () => !!sb && !state.isExample && !!curExamId && curExamId !== NOTE_ID;
+  function myPlayer() {
+    let p = load("gichul.player", null);
+    if (!p || !UUID_RE.test(p)) { p = crypto.randomUUID(); store("gichul.player", p); }
+    return p;
+  }
+  async function loadRank() {
+    if (!realExam()) return;
+    const exam = curExamId;
+    state.rank = { list: null, submitted: false };
+    const { data, error } = await sb.rpc("get_scores", { exam });
+    if (curExamId !== exam || !state.rank) return;
+    state.rank.list = error ? [] : data || [];
+    state.rank.submitted = state.rank.list.some((r) => r.player === myPlayer());
+    if (state.graded) renderSheet();
+  }
+  function renderRank() {
+    const rk = state.rank || { list: null };
+    const s = score();
+    const me = myPlayer();
+    const pending = state.exam.questions.filter((q, i) => (q.type === "short" || q.type === "essay") && state.self[i] == null).length;
+    const nick = el("input", { type: "text", class: "rank-nick", maxlength: "12", placeholder: "닉네임", "aria-label": "닉네임", value: load("gichul.nick", "") });
+    const send = el("button", { type: "button", class: "btn primary", text: rk.submitted ? "점수 다시 올리기" : "내 점수 올리기" });
+    send.addEventListener("click", async () => {
+      const name = nick.value.trim();
+      if (!name) { nick.focus(); setStatus("닉네임을 적어 주세요.", true); return; }
+      send.disabled = true;
+      const { data, error } = await sb.rpc("submit_score", { exam: curExamId, who: me, nick: name, got: s.got, total: s.total });
+      if (error || !data) {
+        send.disabled = false;
+        setStatus(String(error?.message || "").includes("limit_score") ? "이 기기에서 올린 점수가 너무 많아요." : "점수를 올리지 못했어요.", true);
+        return;
+      }
+      store("gichul.nick", name);
+      setStatus("순위에 올렸어요. 같은 사람은 최고 점수만 남아요.");
+      loadRank();
+    });
+    const list = rk.list;
+    return el("section", { class: "rank" },
+      el("div", { class: "rank-head" },
+        el("h3", { text: "이 시험지 순위" }),
+        el("span", { class: "rank-sub", text: "시험지 링크를 받은 사람끼리만 보여요" })),
+      list === null ? el("p", { class: "rank-sub", text: "불러오는 중…" })
+        : list.length ? el("ol", { class: "rank-list" }, ...list.slice(0, 10).map((r, k) => el("li", { class: r.player === me ? "me" : "" },
+          el("span", { class: "rk", text: String(k + 1) }), el("span", { class: "nm", text: r.name + (r.player === me ? " (나)" : "") }),
+          el("span", { class: "sc", text: `${r.got} / ${r.total}점` }))))
+        : el("p", { class: "rank-sub", text: "아직 아무도 올리지 않았어요. 첫 번째로 올리고 링크를 친구에게 보내 보세요." }),
+      el("div", { class: "rank-form" }, nick, send,
+        el("span", { class: "rank-sub", text: `${s.got} / ${s.total}점` + (pending ? ` · 자가채점 ${pending}문항 남음` : "") })));
+  }
+
+  /* ---------- 인쇄 · PDF ---------- */
+  async function printSheet(withKey) {
+    if (!state.exam) return;
+    state.printKey = withKey;
+    document.body.classList.toggle("print-key", withKey);
+    renderSheet();
+    // 그림이 다 불러와진 뒤 인쇄 (최대 3초 기다림)
+    const imgs = [...$("sheet").querySelectorAll("img")];
+    imgs.forEach((img) => { img.loading = "eager"; });
+    await Promise.race([
+      Promise.all(imgs.map((img) => img.complete ? null : new Promise((r) => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }))),
+      new Promise((r) => setTimeout(r, 3000))
+    ]);
+    document.title = (state.exam.title || "기추리 시험지") + (withKey ? " (정답 포함)" : "");
+    window.print();
+  }
+  window.addEventListener("afterprint", () => {
+    if (state.printKey == null) return;
+    state.printKey = null;
+    document.body.classList.remove("print-key");
+    document.title = BASE_TITLE;
+    renderSheet();
+  });
 
   // 문제 그림: 쪽 이미지에서 crop 영역만 잘라 보여줌
   function figureEl(fig, i) {
@@ -999,18 +1332,19 @@
     if (state.graded) {
       const pending = ex.questions.filter((q, i) => (q.type === "short" || q.type === "essay") && state.self[i] == null).length;
       $("scoreBig").textContent = `${s.got}`;
-      $("scoreSub").textContent = `/ ${s.total}점` + (pending ? ` · 서술·단답 ${pending}문항 자가채점 남음` : "");
+      $("scoreSub").textContent = `/ ${s.total}점` + (state.elapsed != null ? ` · ${mmss(state.elapsed)} 걸림` : "") + (pending ? ` · 서술·단답 ${pending}문항 자가채점 남음` : "");
     } else {
       const done = Object.keys(state.answers).filter((k) => state.answers[k] !== "" && state.answers[k] != null).length;
       $("scoreBig").textContent = `${done}/${ex.questions.length}`;
-      $("scoreSub").textContent = "답을 고른 뒤 채점하세요";
+      $("scoreSub").replaceChildren(...(state.timer ? ["남은 시간 ", el("b", { class: "timer-left", text: timeLeft() })] : ["답을 고른 뒤 채점하세요"]));
     }
-    $("grade").textContent = state.graded ? "다시 풀기" : "채점하기";
+    $("grade").textContent = state.graded ? "다시 풀기" : state.timer ? "시험 끝내기" : "채점하기";
     $("mGrade").textContent = $("grade").textContent;
     const prog = $("mProg");
     if (state.graded) prog.replaceChildren("점수 ", el("b", { text: String(s.got) }), ` / ${s.total}점`);
+    else if (state.timer) prog.replaceChildren("⏱ ", el("b", { class: "timer-left", text: timeLeft() }), ` · ${$("scoreBig").textContent}`);
     else prog.replaceChildren("푼 문항 ", el("b", { text: $("scoreBig").textContent }));
-    $("showAll").hidden = state.graded;
+    $("showAll").hidden = state.graded || !!state.timer;
   }
 
   function renderAll() { renderSheet(); renderOmr(); }
@@ -1051,24 +1385,31 @@
   drop.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
   $("file").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
   $("go").addEventListener("click", submitRequest);
-  $("grade").addEventListener("click", () => {
+  // 채점하기 ↔ 다시 풀기 (시험 모드에서는 '시험 끝내기'와 시간 종료도 여기로)
+  function grade() {
     if (!state.exam) return;
     if (state.graded) {
-      // 오답노트를 다시 풀면 맞혀서 빠진 문제를 뺀 새 노트로 시작
+      // 오답노트를 다시 풀면 맞혀서 넘어간 문제를 뺀 새 노트로 시작
       if (curExamId === NOTE_ID) {
-        if (loadWrongs().length) return openWrongNote();
+        if (openWrongNote()) return;
         state.exam = EXAMPLE; state.isExample = true; curExamId = null;
-        setStatus("오답노트를 다 비웠어요. 수고했어요!");
       }
-      state.graded = false; state.answers = {}; state.self = {}; state.open = {}; persist();
+      resetRun(); persist();
     } else {
+      if (state.timer) { state.elapsed = Math.min(Date.now(), state.timer.endAt) - state.timer.startedAt; state.timer = null; clearInterval(tickTimer); }
       state.graded = true;
+      state.timerPick = false;
       state.round = Date.now();
+      persist();
       recordResults();
+      loadRank();
     }
     renderAll();
     if (state.graded) $("sheet").scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+  }
+  $("grade").addEventListener("click", grade);
+  $("print").addEventListener("click", () => printSheet(false));
+  $("printKey").addEventListener("click", () => printSheet(true));
   $("mGrade").addEventListener("click", () => $("grade").click());
   $("mOmr").addEventListener("click", () => document.querySelector(".omr").scrollIntoView({ behavior: "smooth", block: "start" }));
   $("showAll").addEventListener("click", () => {
@@ -1078,7 +1419,7 @@
     $("showAll").textContent = allOpen ? "해설 모두 보기" : "해설 모두 접기";
     renderSheet();
   });
-  $("reset").addEventListener("click", () => { state.answers = {}; state.self = {}; state.graded = false; persist(); renderAll(); });
+  $("reset").addEventListener("click", () => { resetRun(); persist(); renderAll(); });
   $("save").addEventListener("click", () => {
     if (!state.exam) return;
     const name = (state.exam.title || "기출문제").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 80) + ".txt";
@@ -1097,6 +1438,7 @@
   /* ---------- 시작 ---------- */
   if (!restore()) { state.exam = EXAMPLE; state.isExample = true; }
   renderAll();
+  if (state.timer) ensureTick(); // 시험 모드 중에 새로고침했으면 이어서 (시간이 지났으면 바로 채점)
   renderFiles();
   renderLib();
   initAuth();

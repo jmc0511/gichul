@@ -86,7 +86,41 @@
       el("div", { class: "track" }, el("div", { class: "fill" + (pct > 80 ? " hi" : ""), style: `width:${Math.max(pct, 0.5)}%` })));
   }
 
-  function render(s) {
+  const MARKS = ["①", "②", "③", "④", "⑤"];
+  function reportsBox(reports) {
+    const box = el("section", { class: "box" }, el("h2", null, "문제 신고", el("small", { text: reports.length ? `처리 안 한 신고 ${reports.length}개` : "처리할 신고 없음" })));
+    // 같은 문제에 대한 신고는 하나로 묶어서 보여 줌
+    const seen = new Set();
+    for (const r of reports) {
+      const k = r.exam_id + ":" + r.q_index;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const q = r.question || {};
+      const ans = q.type === "mc" ? `${MARKS[(q.answer || 1) - 1] || "?"} ${(q.choices || [])[(q.answer || 1) - 1] || ""}` : String(q.answer ?? "");
+      const notes = reports.filter((x) => x.exam_id === r.exam_id && x.q_index === r.q_index);
+      const done = el("button", { type: "button", class: "btn", text: "처리 완료" });
+      done.addEventListener("click", async () => {
+        done.disabled = true;
+        const { error } = await sb.rpc("admin_resolve_report", { rid: r.id });
+        if (error) { done.disabled = false; alert("처리하지 못했어요: " + error.message); return; }
+        load();
+      });
+      box.append(el("div", { class: "report-card" },
+        el("div", { class: "rc-head" },
+          el("b", { text: `${r.title || "시험지"} · ${r.q_index + 1}번` }),
+          el("span", { class: "pill error", text: `신고 ${r.same_q}건` }),
+          el("a", { href: `./?exam=${r.exam_id}`, target: "_blank", rel: "noopener", text: "시험지 열기" })),
+        el("p", { class: "rc-q", text: q.question || "(문제 없음)" }),
+        q.type === "mc" ? el("ol", { class: "rc-choices" }, ...(q.choices || []).map((c, k) => el("li", { class: k + 1 === q.answer ? "key" : "", text: `${MARKS[k]} ${c}` }))) : null,
+        el("p", { class: "rc-a", text: "정답: " + ans }),
+        q.explanation ? el("p", { class: "foot", text: "해설: " + q.explanation }) : null,
+        el("ul", { class: "rc-notes" }, ...notes.map((x) => el("li", null, el("b", { text: x.reason }), x.note ? ` — ${x.note}` : "", el("span", { class: "foot", text: ` · ${when(x.created_at)}` })))),
+        done));
+    }
+    return box;
+  }
+
+  function render(s, reports) {
     const t = s.today, u = s.usage;
     const storage = u.request_images.bytes + u.exam_figures.bytes;
     const days = s.days.map((d) => ({ ...d, day: String(d.day) }));
@@ -116,6 +150,7 @@
           el("p", { class: "foot", style: "font-size:13px;color:var(--ink)", text: s.limits ? `1인 하루 ${s.limits.per_ip_daily} · 동시 ${s.limits.per_ip_open} · 전체 하루 ${s.limits.total_daily}` : "–" }),
           el("h2", null, "오늘 많이 쓴 사람", el("small", { text: "IP 일부 가림" })),
           (s.top_ips || []).length ? tableOf(["IP", "요청"], s.top_ips.map((r) => el("tr", null, el("td", { class: "num", text: r.ip }), el("td", { class: "num", text: String(r.n) })))) : el("p", { class: "foot", text: "오늘 요청 없음" }))),
+      reportsBox(reports || []),
       el("section", { class: "box" }, el("h2", null, "최근 실패", el("small", { text: "최근 15개" })),
         failures.length ? tableOf(["시각", "과목 / 파일", "원인"], failures.map((f) => el("tr", null,
           el("td", { class: "num", text: when(f.created_at) }),
@@ -142,7 +177,8 @@
       message(/not_admin/.test(error.message) ? `${session.user.email} 계정은 관리자로 등록돼 있지 않아요.` : "불러오지 못했어요: " + error.message);
       return;
     }
-    render(data);
+    const rep = await sb.rpc("admin_reports");
+    render(data, rep.error ? [] : rep.data);
   }
 
   $("reload").addEventListener("click", load);

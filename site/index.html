@@ -33,9 +33,9 @@
       <div class="step">
         <h2><span>1</span>공부자료</h2>
         <label class="drop" id="drop" for="file">
-          <strong>PDF·PPTX를 끌어다 놓거나 눌러서 선택</strong>
-          <small>강의노트, 강의 슬라이드, 교재 발췌 · 여러 개 가능</small>
-          <input type="file" id="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple>
+          <strong>PDF·PPTX·사진을 끌어다 놓거나 눌러서 선택</strong>
+          <small>강의노트, 강의 슬라이드, 교재·필기 사진 · 여러 개 가능</small>
+          <input type="file" id="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*" multiple>
         </label>
         <ul class="files" id="files"></ul>
       </div>
@@ -118,10 +118,20 @@
         <button class="btn primary" id="grade" type="button">채점하기</button>
         <button class="btn" id="showAll" type="button">해설 모두 보기</button>
         <button class="btn" id="reset" type="button">답안 지우기</button>
-        <button class="btn" id="save" type="button">시험지 파일로 저장</button>
+        <button class="btn" id="print" type="button">인쇄 · PDF 저장</button>
+        <button class="btn" id="printKey" type="button">정답 포함 인쇄</button>
+        <button class="link save-txt" id="save" type="button">텍스트 파일로 저장</button>
       </div>
     </aside>
   </div>
+
+  <footer class="foot-links">
+    <a href="privacy.html">개인정보처리방침</a>
+    <span aria-hidden="true">·</span>
+    <a href="mailto:beogo0511@naver.com">문의 beogo0511@naver.com</a>
+    <span aria-hidden="true">·</span>
+    <span>AI가 만든 문제라 틀릴 수 있어요. 이상하면 '문제 신고'를 눌러 주세요.</span>
+  </footer>
 </div>
 
 <div class="mbar" aria-label="채점 바">

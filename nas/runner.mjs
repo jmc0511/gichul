@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { pending, claim, finish, failReq, setProgress, stillWanted, resetStale, broadcast, downloadImage, uploadFigure, earlierQuestions, heartbeat, cleanup, SUPABASE_URL, SUPABASE_SECRET } from "./queue.mjs";
+import { pending, claim, finish, failReq, setProgress, stillWanted, resetStale, broadcast, downloadImage, uploadFigure, earlierQuestions, examQuestions, finishRegen, heartbeat, cleanup, SUPABASE_URL, SUPABASE_SECRET } from "./queue.mjs";
 
 const INTERVAL = (parseInt(process.env.POLL_SECONDS, 10) || 30) * 1000;
 const MAX_PARALLEL = parseInt(process.env.MAX_PARALLEL, 10) || 3;
@@ -114,13 +114,21 @@ async function handle(id) {
   try {
     const row = await claim(id);
     if (!row) return; // 다른 처리기가 이미 가져감
-    const total = parseInt((row.instructions.match(/정확히\s*(\d+)\s*문항/) || [])[1], 10) || 0;
+    const regen = row.regen_exam ? { examId: row.regen_exam, idx: row.regen_idx } : null;
+    const total = regen ? 1 : parseInt((row.instructions.match(/정확히\s*(\d+)\s*문항/) || [])[1], 10) || 0;
     await broadcast("req-" + id, "update", { status: "working", progress: "자료 읽는 중" });
-    log(`[${short(id)}] 출제 시작 (${total || "?"}문항)`);
+    log(`[${short(id)}] ${regen ? `문제 하나 다시 (${regen.idx + 1}번)` : `출제 시작 (${total || "?"}문항)`}`);
 
-    // 같은 자료로 다시 출제한 요청이면 앞서 낸 문제와 겹치지 않게
     let retryNote = "";
-    if (row.retry_of) {
+    if (regen) {
+      // 이 문제만 다시: 지금 시험지를 보여 주고 idx번 하나만 새로 만들게 함
+      const qs = await examQuestions(regen.examId);
+      const old = qs?.[regen.idx];
+      if (!old) throw new Error("바꿀 문제를 찾지 못함");
+      const list = qs.map((q, k) => `${k + 1}. ${String(q.question || "").replace(/\s+/g, " ").slice(0, 160)}`).join("\n");
+      retryNote = `\n\n[문제 하나만 다시] 위 출제 조건의 문항 수는 무시하고, 아래 시험지의 ${regen.idx + 1}번 문제를 대신할 새 문제 **1개만** 만드세요.\n- 유형은 원래 문제와 같은 "${old.type}"로.\n- 원래 문제와 다른 개념이나 다른 각도로, 시험지의 다른 문제와도 겹치지 않게.\n- 출력 형식은 같고 questions 배열에 문제 1개만 넣으세요.\n[지금 시험지]\n${list}\n[바꿀 문제] ${regen.idx + 1}번: ${String(old.question || "").slice(0, 400)}`;
+    } else if (row.retry_of) {
+      // 같은 자료로 다시 출제한 요청이면 앞서 낸 문제와 겹치지 않게
       const prev = await earlierQuestions(row.retry_of).catch(() => []);
       if (prev.length) {
         const list = prev.slice(0, 80).map((q) => "- " + q.replace(/\s+/g, " ").slice(0, 160)).join("\n");
@@ -159,6 +167,14 @@ async function handle(id) {
     if (cancelled || !(await stillWanted(id))) { cancelled = true; return; }
     if (!exam) throw lastErr;
 
+    if (regen) {
+      const one = { questions: exam.questions.slice(0, 1) };
+      await attachFigures(one, imgBufs);
+      await finishRegen(id, regen.examId, regen.idx, one.questions[0]);
+      await broadcast("req-" + id, "update", { status: "done", exam_id: regen.examId });
+      log(`[${short(id)}] 완료 (${regen.idx + 1}번 문제 교체, ${Math.round((Date.now() - started) / 1000)}초)`);
+      return;
+    }
     const figs = await attachFigures(exam, imgBufs);
     if (figs) log(`[${short(id)}] 문제에 그림 ${figs}장 붙임`);
     const examId = await finish(id, exam);

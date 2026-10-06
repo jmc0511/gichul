@@ -37,8 +37,23 @@ export async function pending() {
 export async function claim(id) {
   const got = await call("PATCH", `/requests?id=eq.${id}&status=eq.pending`, { status: "working", progress: "자료 읽는 중", started_at: new Date().toISOString() });
   if (!got.length) return null;
-  const [row] = await call("GET", `/requests?id=eq.${id}&select=instructions,material,images,retry_of`);
+  const [row] = await call("GET", `/requests?id=eq.${id}&select=instructions,material,images,retry_of,regen_exam,regen_idx`);
   return row;
+}
+
+/** 시험지 문제 목록 */
+export async function examQuestions(examId) {
+  const [e] = await call("GET", `/exams?id=eq.${examId}&select=questions`);
+  return e?.questions || null;
+}
+
+/** '이 문제만 다시': 시험지의 idx번 문제를 바꾸고 요청을 완료로 */
+export async function finishRegen(id, examId, idx, question) {
+  const qs = await examQuestions(examId);
+  if (!qs || idx < 0 || idx >= qs.length) throw new Error("바꿀 시험지·문제를 찾지 못함");
+  qs[idx] = question;
+  await call("PATCH", `/exams?id=eq.${examId}`, { questions: qs });
+  await call("PATCH", `/requests?id=eq.${id}`, { status: "done", exam_id: examId, progress: null, material: "", images: null, finished_at: new Date().toISOString() });
 }
 
 /** 다시 출제한 요청이면, 앞서 같은 자료로 낸 시험지들의 문제 (최대 5번 거슬러 올라감) */

@@ -243,3 +243,73 @@ button { cursor: pointer; }
 .account .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
 .account .dot.guest { background: var(--muted); }
 .account .link { font-size: 13px; }
+
+/* 문제 아래 도구: 해설 · 이 문제 다시 · 신고 */
+.q-tools { align-items: center; gap: 4px 14px; }
+.q-tools .link.danger { font-size: 13px; color: var(--muted); }
+.q-tools .q-regen.armed { color: var(--omr); }
+.q-busy { font-size: 12.5px; color: var(--omr); }
+.report { margin-top: 10px; font-family: var(--f-ui); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--paper); }
+.report-h { margin: 0; font-size: 13px; font-weight: 600; }
+.report-note { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13px; resize: vertical; background: var(--paper); }
+.report-actions { display: flex; align-items: center; gap: 12px; }
+.report-actions .btn { padding: 6px 12px; font-size: 13px; }
+
+/* 시험 모드 */
+.sheet-tools { gap: 8px; flex-wrap: wrap; }
+.sheet-tools .btn { padding: 6px 12px; font-size: 13px; }
+.timer-pick { font-family: var(--f-ui); border: 1px dashed var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+.timer-pick p { margin: 0; font-size: 13px; color: var(--muted); }
+.chip { border: 1px solid var(--line); background: var(--paper); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-family: var(--f-num); }
+.chip:hover { border-color: var(--ink); }
+.chip.on { border-color: var(--omr); color: var(--omr); font-weight: 600; }
+.chip small { font-family: var(--f-ui); font-size: 11px; }
+.exam-bar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: 5; display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap;
+  font-family: var(--f-ui); font-size: 14px; background: var(--omr-soft); border: 1px solid var(--omr); border-radius: 8px; padding: 8px 12px; margin-bottom: 16px; }
+.exam-bar .btn { margin-left: auto; padding: 6px 12px; font-size: 13px; }
+.exam-bar-note { font-size: 12.5px; color: var(--muted); }
+.timer-left { font-family: var(--f-num); font-variant-numeric: tabular-nums; color: var(--omr); }
+.timer-left.low { color: var(--wrong); }
+
+/* 친구와 점수 비교 */
+.rank { font-family: var(--f-ui); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 22px; display: flex; flex-direction: column; gap: 8px; }
+.rank-head { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
+.rank-head h3 { margin: 0; font-size: 15px; }
+.rank-sub { font-size: 12.5px; color: var(--muted); margin: 0; }
+.rank-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rank-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-bottom: 1px dotted var(--line); font-size: 14px; }
+.rank-list li.me { background: var(--omr-soft); border-radius: 6px; font-weight: 700; }
+.rank-list .rk { font-family: var(--f-num); color: var(--omr); text-align: right; }
+.rank-list .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-list .sc { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.rank-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rank-nick { width: 130px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13.5px; background: var(--paper); }
+.rank-form .btn { padding: 6px 12px; font-size: 13px; }
+
+/* 오답노트 과목 고르기 */
+.note-subject { width: 100%; border: 1px solid var(--omr); border-radius: 6px; padding: 4px 6px; font-size: 12.5px; background: var(--paper); font-family: var(--f-ui); }
+
+/* 답안지 아래 링크 · 사이트 아래 */
+.save-txt { font-size: 12.5px; padding: 2px 0; }
+.foot-links { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center; font-size: 12.5px; color: var(--muted); padding-top: 8px; }
+.foot-links a { color: var(--muted); }
+
+/* 인쇄 · PDF: 시험지만 깨끗하게, 항상 밝은 색 */
+@media print {
+  :root:not([data-print]), :root[data-theme="dark"] {
+    --desk: #fff; --paper: #fff; --ink: #000; --muted: #444; --line: #bbb; --chip: #fff;
+    --omr: #000; --omr-soft: #fff; --ok: #000; --ok-soft: #fff; --wrong: #000; --wrong-soft: #fff; color-scheme: light;
+  }
+  @page { size: A4; margin: 14mm 12mm; }
+  body { background: #fff; }
+  .top, .panel, .omr, .mbar, .foot-links, .q-tools, .sheet-tools, .timer-pick, .exam-bar, .ex-flag, .rank, .report, .math-preview, .selfcheck { display: none !important; }
+  .wrap { padding: 0; max-width: none; }
+  .grid { display: block; }
+  .sheet { border: 0; box-shadow: none; padding: 0; }
+  .choice.sel, .choice.right, .choice.miss { background: none; font-weight: inherit; text-decoration: none; }
+  .ox .choice { border-color: #888; }
+  .write { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body:not(.print-key) .sol { display: none !important; }
+  .sol { border-left: 2px solid #000; background: none; break-inside: avoid; }
+  .fig-box { break-inside: avoid; }
+}
