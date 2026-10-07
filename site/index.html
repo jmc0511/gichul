@@ -54,7 +54,12 @@
           <small>강의노트, 강의 슬라이드, 교재·필기 사진 · 여러 개 가능</small>
           <input type="file" id="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*" multiple>
         </label>
+        <div class="files-head" id="filesHead" hidden>
+          <span class="files-note">내 자료함 · <span id="filesCount"></span></span>
+          <label class="files-all"><input type="checkbox" id="filesAll"> 모두 선택</label>
+        </div>
         <ul class="files" id="files"></ul>
+        <p class="files-tip" id="filesTip">올린 자료는 이 기기에 보관돼요. 체크한 자료만 출제에 쓰여요.</p>
       </div>
 
       <div class="step">

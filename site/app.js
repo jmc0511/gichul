@@ -353,6 +353,75 @@
   const isPptx = (f) => /\.pptx$/i.test(f.name);
   const isImage = (f) => /^image\//i.test(f.type) || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name);
 
+  /* ---------- 내 자료함 (이 기기의 IndexedDB에 보관) ----------
+     올린 파일을 그대로 저장해 두고, 다시 열면 목록을 보여 줌. 체크한 자료만 출제에 씀.
+     meta: { id, name, type, checked, addedAt, summary } / blobs: { id, blob } */
+  const lib = (() => {
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((ok, no) => {
+      try {
+        const r = indexedDB.open("gichuri-library", 1);
+        r.onupgradeneeded = () => { r.result.createObjectStore("meta", { keyPath: "id" }); r.result.createObjectStore("blobs", { keyPath: "id" }); };
+        r.onsuccess = () => ok(r.result);
+        r.onerror = () => no(r.error);
+      } catch (e) { no(e); }
+    }));
+    const run = async (stores, mode, fn) => {
+      const db = await open();
+      return new Promise((ok, no) => {
+        const t = db.transaction(stores, mode);
+        const req = fn(t);
+        t.oncomplete = () => ok(req?.result);
+        t.onerror = () => no(t.error); t.onabort = () => no(t.error);
+      });
+    };
+    return {
+      metas: () => run(["meta"], "readonly", (t) => t.objectStore("meta").getAll()),
+      blob: (id) => run(["blobs"], "readonly", (t) => t.objectStore("blobs").get(id)),
+      add: (meta, blob) => run(["meta", "blobs"], "readwrite", (t) => { t.objectStore("blobs").put({ id: meta.id, blob }); return t.objectStore("meta").put(meta); }),
+      setMeta: (meta) => run(["meta"], "readwrite", (t) => t.objectStore("meta").put(meta)),
+      del: (id) => run(["meta", "blobs"], "readwrite", (t) => { t.objectStore("blobs").delete(id); return t.objectStore("meta").delete(id); })
+    };
+  })();
+  const LIB_MAX = 30;
+  const metaOf = (f) => ({ id: f.id, name: f.name, type: f.type, size: f.size, checked: f.checked, addedAt: f.addedAt, summary: f.summary || "" });
+  const saveMeta = (f) => { if (f.stored) lib.setMeta(metaOf(f)).catch(() => {}); };
+  // 체크했고 다 읽은 자료 = 이번 출제에 쓸 자료
+  const activeFiles = () => state.files.filter((f) => f.checked && !f.loading && f.pages);
+
+  function fileSummary(f) {
+    if (f.kind === "image") return "사진";
+    let meta = f.pages.length + (f.kind === "pptx" ? "장" : "쪽");
+    if (f.scanned) meta += " · 스캔본";
+    else if (f.visuals.length) meta += ` · 그림 ${f.visuals.length}`;
+    return meta;
+  }
+
+  // 파일 하나 읽기 (새로 올린 것, 자료함에서 꺼낸 것 공통)
+  async function parseInto(item, file) {
+    item.loading = true; renderFiles();
+    try {
+      if (isPptx(file)) {
+        if (!window.JSZip) throw new Error("no jszip");
+        Object.assign(item, await readPptx(file));
+      } else if (isImage(file)) {
+        Object.assign(item, await readImage(file));
+      } else {
+        if (!window.pdfjsLib) throw new Error("no pdfjs");
+        Object.assign(item, await readPdf(file));
+      }
+      item.loading = false;
+      item.summary = fileSummary(item);
+      return true;
+    } catch (e) {
+      item.loading = false; item.failed = true;
+      setStatus(e?.message === "heic"
+        ? `"${file.name}"은(는) 아이폰 HEIC 사진이라 이 브라우저에서 못 읽어요. JPG로 바꿔 올리거나, 아이폰 설정 > 카메라 > 포맷 > '높은 호환성'으로 찍어 주세요.`
+        : `"${file.name}"을(를) 읽지 못했습니다. 암호가 걸려 있거나 손상된 파일일 수 있습니다.`, true);
+      return false;
+    } finally { renderFiles(); }
+  }
+
   async function addFiles(list) {
     const files = [...list].filter((f) => isPdf(f) || isPptx(f) || isImage(f));
     if (!files.length) {
@@ -361,50 +430,81 @@
       return;
     }
     for (const f of files) {
-      const item = { name: f.name, pages: null, loading: true };
-      state.files.push(item);
-      renderFiles();
-      try {
-        if (isPptx(f)) {
-          if (!window.JSZip) throw new Error("no jszip");
-          Object.assign(item, await readPptx(f), { loading: false });
-        } else if (isImage(f)) {
-          Object.assign(item, await readImage(f), { loading: false });
-        } else {
-          if (!window.pdfjsLib) throw new Error("no pdfjs");
-          Object.assign(item, await readPdf(f), { loading: false });
-        }
-      } catch (e) {
-        state.files = state.files.filter((x) => x !== item);
-        setStatus(e?.message === "heic"
-          ? `"${f.name}"은(는) 아이폰 HEIC 사진이라 이 브라우저에서 못 읽어요. JPG로 바꿔 올리거나, 아이폰 설정 > 카메라 > 포맷 > '높은 호환성'으로 찍어 주세요.`
-          : `"${f.name}"을(를) 읽지 못했습니다. 암호가 걸려 있거나 손상된 파일일 수 있습니다.`, true);
-      }
+      // 이미 자료함에 있는 같은 파일이면 새로 넣지 않고 체크만 켬
+      const same = state.files.find((x) => x.name === f.name && x.size === f.size);
+      if (same) { same.checked = true; saveMeta(same); if (!same.pages && !same.loading) await loadStored(same); renderFiles(); continue; }
+      const item = { id: crypto.randomUUID(), name: f.name, type: f.type, size: f.size, addedAt: Date.now(), checked: true, pages: null, loading: true };
+      state.files.unshift(item);
+      if (!(await parseInto(item, f))) { state.files = state.files.filter((x) => x !== item); renderFiles(); continue; }
+      if (state.files.filter((x) => x.stored).length >= LIB_MAX) { setStatus(`자료함에는 ${LIB_MAX}개까지 보관돼요. 이 자료는 이번에만 쓰고 저장하지 않았어요. 안 쓰는 자료를 ×로 지워 주세요.`, true); continue; }
+      try { await lib.add(metaOf(item), f); item.stored = true; }
+      catch (e) { setStatus("기기 저장 공간이 부족해 이 자료는 이번에만 쓰고 보관하지 못했어요.", true); }
+    }
+    renderFiles();
+  }
+
+  // 자료함에서 꺼낸 자료는 체크할 때 읽음 (안 쓰는 큰 PDF까지 매번 읽지 않도록)
+  async function loadStored(item) {
+    try {
+      const rec = await lib.blob(item.id);
+      if (!rec?.blob) throw new Error("missing");
+      const file = new File([rec.blob], item.name, { type: item.type || rec.blob.type });
+      if (await parseInto(item, file)) saveMeta(item);
+    } catch (e) {
+      item.failed = true; item.loading = false;
+      setStatus(`"${item.name}"을(를) 기기 저장소에서 찾지 못했어요. 다시 올려 주세요.`, true);
       renderFiles();
     }
   }
+  async function restoreLibrary() {
+    let metas = [];
+    try { metas = await lib.metas(); } catch (e) { return; }
+    metas.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    for (const m of metas) if (!state.files.some((f) => f.id === m.id)) state.files.push({ ...m, pages: null, loading: false, stored: true });
+    renderFiles();
+    for (const f of state.files) if (f.checked && f.stored && !f.pages) await loadStored(f);
+  }
+
+  function toggleFile(f, on) {
+    f.checked = on; saveMeta(f);
+    if (on && !f.pages && !f.loading && f.stored) loadStored(f);
+    renderFiles();
+  }
+  function removeFile(f) {
+    state.files = state.files.filter((x) => x !== f);
+    if (f.stored) lib.del(f.id).catch(() => {});
+    renderFiles();
+  }
 
   function renderFiles() {
-    $("files").replaceChildren(...state.files.map((f) => {
-      let meta = "읽는 중…";
-      if (!f.loading) {
-        meta = f.kind === "image" ? "사진" : f.pages.length + (f.kind === "pptx" ? "장" : "쪽");
-        if (f.scanned && f.kind !== "image") meta += " · 스캔본";
-        else if (f.visuals.length) meta += ` · 그림 ${f.visuals.length}`;
-      }
-      return el("li", null,
-        el("span", { class: "nm", title: f.name, text: f.name }),
-        el("span", { class: "meta", text: meta, title: f.scanned ? "글자가 없는 쪽은 이미지로 보내 Claude가 직접 읽습니다" : null }),
-        el("button", { type: "button", "aria-label": f.name + " 빼기", text: "×", onclick: () => { state.files = state.files.filter((x) => x !== f); renderFiles(); } })
+    const all = state.files;
+    const allOn = all.length > 0 && all.every((f) => f.checked);
+    const head = $("filesHead");
+    if (head) {
+      head.hidden = !all.length;
+      const box = $("filesAll");
+      box.checked = allOn; box.indeterminate = !allOn && all.some((f) => f.checked);
+      $("filesCount").textContent = `${all.filter((f) => f.checked).length}/${all.length}개 선택`;
+    }
+    $("files").replaceChildren(...all.map((f) => {
+      const meta = f.loading ? "읽는 중…" : f.failed ? "읽기 실패" : f.pages ? fileSummary(f) : (f.summary || "보관됨");
+      const cb = el("input", { type: "checkbox", id: "file-" + f.id, "aria-label": f.name + " 출제에 쓰기" });
+      cb.checked = !!f.checked;
+      cb.addEventListener("change", () => toggleFile(f, cb.checked));
+      return el("li", { class: f.checked ? "" : "off" },
+        cb,
+        el("label", { class: "nm", for: "file-" + f.id, title: f.name, text: f.name }),
+        el("span", { class: "meta" + (f.failed ? " warn" : ""), text: meta, title: f.scanned ? "글자가 없는 쪽은 이미지로 보내 Claude가 직접 읽습니다" : null }),
+        el("button", { type: "button", "aria-label": f.name + " 자료함에서 지우기", title: "자료함에서 지우기", text: "×", onclick: () => removeFile(f) })
       );
     }));
-    const ready = state.files.filter((f) => !f.loading);
+    const ready = activeFiles();
     const block = quotaBlock();
-    $("go").disabled = !sb || state.busy || !ready.length || state.files.some((f) => f.loading) || !!block;
+    $("go").disabled = !sb || state.busy || !ready.length || all.some((f) => f.checked && f.loading) || !!block;
     if (state.busy) return;
     if (block && ready.length) { setStatus(block, true); return; }
     if (!sb) setStatus("사이트 설정이 끝나지 않았습니다. config.js에 Supabase 주소와 공개 키를 넣어 주세요.", true);
-    else if (!ready.length) setStatus("PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.");
+    else if (!ready.length) setStatus(all.length ? "출제에 쓸 자료를 체크해 주세요." : "PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.");
     else {
       const pages = ready.reduce((a, f) => a + f.pages.length, 0);
       const vis = ready.reduce((a, f) => a + f.visuals.length, 0);
@@ -444,7 +544,7 @@
   // 보낼 그림 고르기: 글자 없는 쪽 > 그림 많은 쪽 순으로 최대 20장, 자료 순서대로 번호를 붙임
   function pickImages() {
     const all = [];
-    state.files.filter((f) => !f.loading).forEach((f, fi) => f.visuals.forEach((v, vi) => all.push({ f, fi, vi, ...v })));
+    activeFiles().forEach((f, fi) => f.visuals.forEach((v, vi) => all.push({ f, fi, vi, ...v })));
     const chosen = all.sort((a, b) => b.score - a.score).slice(0, MAX_IMAGES)
       .sort((a, b) => a.fi - b.fi || a.page - b.page || a.vi - b.vi);
     chosen.forEach((c, k) => {
@@ -455,7 +555,7 @@
   }
 
   function buildMaterial(images = []) {
-    const ready = state.files.filter((f) => !f.loading);
+    const ready = activeFiles();
     const tag = (f, i) => {
       const nos = images.filter((c) => c.f === f && c.page === i).map((c) => "#" + c.no);
       return nos.length ? `\n[이 쪽의 그림: 첨부 이미지 ${nos.join(", ")}]` : "";
@@ -525,14 +625,14 @@
     askNotify();
     const picked = pickImages();
     const material = buildMaterial(picked);
-    const hasText = state.files.some((f) => !f.loading && f.pages.some((p) => p.trim()));
+    const hasText = activeFiles().some((f) => f.pages.some((p) => p.trim()));
     if (!hasText && !picked.length) { setStatus("자료에서 글자도 그림도 찾지 못했어요. 다른 파일로 시도해 주세요.", true); return; }
     await loadQuota(); // 그림을 올리기 전에 한도부터 확인
     if (quotaBlock()) { setStatus(quotaBlock(), true); return; }
     state.busy = true; renderFiles();
     setStatus("요청을 보내는 중…");
     try {
-      const ready = state.files.filter((f) => !f.loading);
+      const ready = activeFiles();
       const id = crypto.randomUUID();
 
       // 그림을 먼저 올리고(처리기가 요청을 보자마자 쓸 수 있게) 요청을 넣음
@@ -560,8 +660,7 @@
       if (error) throw error;
       store("gichul.myreqs", [id, ...myRequestIds()].slice(0, 30));
       notifyWorker();
-      state.files = [];   // 같은 자료를 실수로 두 번 보내지 않도록 비움
-      state.busy = false;
+      state.busy = false; // 자료는 자료함에 그대로 둠 (다음 출제에 다시 체크해서 쓸 수 있게)
       renderFiles();
       setStatus("요청을 보냈습니다. 출제가 끝나면 아래 문제집에 시험지가 올라옵니다.");
       await refresh();
@@ -1400,6 +1499,7 @@
   ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
   drop.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
   $("file").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
+  $("filesAll").addEventListener("change", (e) => { const on = e.target.checked; state.files.forEach((f) => { if (f.checked !== on) toggleFile(f, on); }); renderFiles(); });
   $("go").addEventListener("click", submitRequest);
   // 채점하기 ↔ 다시 풀기 (시험 모드에서는 '시험 끝내기'와 시간 종료도 여기로)
   function grade() {
@@ -1456,6 +1556,7 @@
   renderAll();
   if (state.timer) ensureTick(); // 시험 모드 중에 새로고침했으면 이어서 (시간이 지났으면 바로 채점)
   renderFiles();
+  restoreLibrary(); // 이 기기 자료함에 보관한 자료 불러오기
   renderLib();
   initAuth();
   refresh().then(openFromLink);
