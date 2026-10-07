@@ -20,7 +20,9 @@ const short = (id) => id.slice(0, 8);
 // content: Claude 메시지 내용 블록 배열 (글 + 그림)
 function askClaude(content, onText, onSpawn, timeout = RUN_TIMEOUT) {
   return new Promise((resolve, reject) => {
-    const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--max-turns", "1"];
+    // 보안: 자료에 숨긴 지시문이 있어도 아무 도구도 못 쓰게 함
+    // --tools "" = 기본 도구(명령 실행·파일 읽기 등) 전부 끔, --strict-mcp-config = 계정에 연결된 Google Drive 같은 외부 도구도 끔
+    const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--max-turns", "1", "--tools", "", "--strict-mcp-config"];
     if (MODEL) args.push("--model", MODEL);
     // Windows(PC 테스트)에서는 claude.cmd 라 shell 이 필요
     const p = spawn("claude", args, { cwd: process.env.WORK_DIR || "/work", stdio: ["pipe", "pipe", "inherit"], shell: process.platform === "win32" });
