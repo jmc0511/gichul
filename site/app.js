@@ -474,6 +474,7 @@
     const extra = $("extra").value.trim();
     const areas = [...document.querySelectorAll('input[name="area"]:checked')].map((i) => i.value);
     const lang = document.querySelector('input[name="lang"]:checked').value;
+    const noFig = document.querySelector('input[name="fig"]:checked')?.value === "off";
     const typeDesc = { mc: "객관식 5지선다(mc)", ox: "O/X(ox)", short: "단답형(short)", essay: "서술형(essay)" };
     const langRule = {
       ko: "- 문제·보기·해설은 한국어로 쓰세요. 단, 외국어 단어·문장·지문을 인용할 때는 원문 그대로 쓰세요.",
@@ -509,6 +510,7 @@
       "- 배점(points)은 난이도에 따라 2~6점, 서술형은 5~10점.",
       "- 수식이나 기호가 들어간 식은 LaTeX로 쓰세요. 문장 속 수식은 $...$, 따로 놓을 수식은 $$...$$. 예: $\\frac{1}{2}mv^2$, $\\int_0^1 x\\,dx$, $V_{out} = -\\frac{R_f}{R_1}V_{in}$. JSON 문자열 안에서는 역슬래시를 \\\\ 처럼 두 번 써야 합니다. 수식이 아닌 곳(금액 등)에는 $ 기호를 쓰지 마세요.",
       langRule,
+      noFig ? "- [그림 없이] 문항에 figure를 붙이지 마세요. 그림·그래프·회로도의 내용이 필요하면 필요한 수치와 관계를 문제 글로 설명하세요." : null,
       ...areaRule,
       "",
       "[출력 형식] JSON 하나:",

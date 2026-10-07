@@ -18,7 +18,7 @@ const short = (id) => id.slice(0, 8);
 
 /* ---------- Claude 한 번 호출, 글이 써지는 대로 onText ---------- */
 // content: Claude 메시지 내용 블록 배열 (글 + 그림)
-function askClaude(content, onText, onSpawn) {
+function askClaude(content, onText, onSpawn, timeout = RUN_TIMEOUT) {
   return new Promise((resolve, reject) => {
     const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--max-turns", "1"];
     if (MODEL) args.push("--model", MODEL);
@@ -26,7 +26,7 @@ function askClaude(content, onText, onSpawn) {
     const p = spawn("claude", args, { cwd: process.env.WORK_DIR || "/work", stdio: ["pipe", "pipe", "inherit"], shell: process.platform === "win32" });
     onSpawn?.(p);
     let buf = "", text = "", result = null;
-    const timer = setTimeout(() => { p.kill("SIGTERM"); reject(new Error("시간 초과")); }, RUN_TIMEOUT);
+    const timer = setTimeout(() => { p.kill("SIGTERM"); reject(new Error("시간 초과")); }, timeout);
     p.stdout.setEncoding("utf8");
     p.stdout.on("data", (chunk) => {
       buf += chunk;
@@ -76,6 +76,35 @@ function validCrop(c) {
   if (x1 - x0 < 0.08 || y1 - y0 < 0.05) return null;
   if (x0 === 0 && y0 === 0 && x1 === 1 && y1 === 1) return null;
   return [x0, y0, x1, y1].map((v) => Math.round(v * 1000) / 1000);
+}
+
+/* 그림 영역 다듬기: 시험지 전체를 쓰는 동안 잡은 영역은 엉성해서(슬라이드 제목·바닥글이 딸려 옴),
+   그림 문항마다 그 쪽 이미지 하나와 문제만 따로 보여 주고 영역을 다시 받음. 실패하면 처음 영역을 그대로 씀 */
+const CROP_RULE = [
+  "figure_crop은 그림 자체만 딱 맞게 잡으세요. 그래프라면 축·축 이름·눈금 숫자·범례·그림 안의 화살표와 라벨까지가 그림입니다.",
+  "다음은 빼세요: 슬라이드 제목, 그림 위아래의 설명 문장·글머리표(•) 목록, 학교 이름·로고, 과목명, 쪽 번호, 머리글·바닥글, 문제와 상관없는 다른 그림.",
+  "정답이 그림 속 글자로 그대로 적혀 있으면 그 부분은 영역에서 빼세요. 바깥쪽 여유는 1% 정도만 두세요."
+].join("\n");
+const parseCrop = (raw) => {
+  const m = String(raw).match(/\[\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\]/);
+  return m ? m.slice(1, 5).map(Number) : null;
+};
+async function refineCrops(exam, bufs, isCancelled) {
+  const jobs = exam.questions.filter((q) => bufs.has(parseInt(q.figure, 10))).slice(0, 8);
+  let fixed = 0;
+  await Promise.all(jobs.map(async (q) => {
+    if (isCancelled()) return;
+    const choices = Array.isArray(q.choices) ? "\n보기: " + q.choices.join(" / ") : "";
+    const content = [
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: bufs.get(parseInt(q.figure, 10)).toString("base64") } },
+      { type: "text", text: `위 이미지는 강의자료 한 쪽입니다. 아래 시험 문제에 붙일 그림 영역을 잡아 주세요.\n[문제] ${String(q.question || "").slice(0, 500)}${choices.slice(0, 400)}\n\n${CROP_RULE}\n\nJSON 하나만 출력: {"figure_crop":[왼쪽,위,오른쪽,아래]} (이미지 전체 기준 0~1 비율, 소수 둘째 자리까지)` }
+    ];
+    try {
+      const crop = parseCrop(await askClaude(content, () => {}, () => {}, 90 * 1000));
+      if (crop && validCrop(crop)) { q.figure_crop = crop; fixed++; }
+    } catch (e) { log("그림 영역 다듬기 실패:", e.message); }
+  }));
+  return fixed;
 }
 
 // 문항의 "figure": n 을 시험지용 공개 저장소의 그림으로 바꿈. 붙인 그림 수를 돌려줌
@@ -167,8 +196,20 @@ async function handle(id) {
     if (cancelled || !(await stillWanted(id))) { cancelled = true; return; }
     if (!exam) throw lastErr;
 
+    const target = regen ? { questions: exam.questions.slice(0, 1) } : exam;
+    if (/\[그림 없이\]/.test(row.instructions)) {
+      // 출제 조건에서 '문제에 그림 넣기: 빼기'를 고른 요청
+      for (const q of target.questions) { delete q.figure; delete q.figure_crop; }
+    } else if (target.questions.some((q) => imgBufs.has(parseInt(q.figure, 10)))) {
+      broadcast("req-" + id, "update", { status: "working", progress: "그림 다듬는 중" });
+      setProgress(id, "그림 다듬는 중").catch(() => {});
+      const fixed = await refineCrops(target, imgBufs, () => cancelled);
+      if (fixed) log(`[${short(id)}] 그림 영역 ${fixed}개 다시 잡음`);
+      if (cancelled || !(await stillWanted(id))) { cancelled = true; return; }
+    }
+
     if (regen) {
-      const one = { questions: exam.questions.slice(0, 1) };
+      const one = target;
       await attachFigures(one, imgBufs);
       await finishRegen(id, regen.examId, regen.idx, one.questions[0]);
       await broadcast("req-" + id, "update", { status: "done", exam_id: regen.examId });
