@@ -211,6 +211,8 @@ button { cursor: pointer; }
 .fig-box.cropped { position: relative; width: 100%; }
 .fig-box.cropped img { position: absolute; max-width: none; }
 .fig-missing { font-family: var(--f-ui); font-size: 12.5px; color: var(--muted); }
+.fig-box.has-hide { position: relative; }
+.fig-hide { position: absolute; background: #fff; pointer-events: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 /* 남은 요청 수 */
 .quota { margin: -10px 0 0; font-size: 12.5px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
 .quota.out { color: var(--wrong); }

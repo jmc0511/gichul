@@ -838,7 +838,8 @@
       };
       if (q.figure && typeof q.figure.path === "string" && /^[0-9a-f-]{36}\/\d+\.jpg$/i.test(q.figure.path)) {
         const c = q.figure.crop;
-        out.figure = { path: q.figure.path, crop: Array.isArray(c) && c.length === 4 && c.every((v) => typeof v === "number") ? c : null };
+        const box = (b) => Array.isArray(b) && b.length === 4 && b.every((v) => typeof v === "number" && isFinite(v));
+        out.figure = { path: q.figure.path, crop: box(c) ? c : null, hide: Array.isArray(q.figure.hide) ? q.figure.hide.filter(box).slice(0, 4) : [] };
       }
       if (type === "mc") {
         out.choices = (q.choices || []).slice(0, 5).map((c) => String(c).replace(/^\s*[①②③④⑤]\s*/, ""));
@@ -1284,6 +1285,17 @@
         img.style.left = (-x0 / (x1 - x0)) * 100 + "%";
         img.style.top = (-y0 / (y1 - y0)) * 100 + "%";
       });
+    }
+    // 그림 안에 남은 출처 문구 같은 글 덩어리를 흰 칸으로 가림 (좌표는 쪽 전체 기준 → 잘라 낸 영역 기준으로 바꿈)
+    if (fig.hide?.length) {
+      const [x0, y0, x1, y1] = fig.crop || [0, 0, 1, 1];
+      box.classList.add("has-hide");
+      for (const [hx0, hy0, hx1, hy1] of fig.hide) {
+        const l = Math.max(0, (hx0 - x0) / (x1 - x0)), t = Math.max(0, (hy0 - y0) / (y1 - y0));
+        const r = Math.min(1, (hx1 - x0) / (x1 - x0)), b = Math.min(1, (hy1 - y0) / (y1 - y0));
+        if (r <= l || b <= t) continue;
+        box.append(el("span", { class: "fig-hide", style: `left:${l * 100}%;top:${t * 100}%;width:${(r - l) * 100}%;height:${(b - t) * 100}%` }));
+      }
     }
     img.addEventListener("error", () => { wrap.replaceChildren(el("figcaption", { class: "fig-missing", text: "그림을 불러오지 못했어요." })); });
     return wrap;

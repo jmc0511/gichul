@@ -82,13 +82,25 @@ function validCrop(c) {
    그림 문항마다 그 쪽 이미지 하나와 문제만 따로 보여 주고 영역을 다시 받음. 실패하면 처음 영역을 그대로 씀 */
 const CROP_RULE = [
   "figure_crop은 그림 자체만 딱 맞게 잡으세요. 그래프라면 축·축 이름·눈금 숫자·범례·그림 안의 화살표와 라벨까지가 그림입니다.",
-  "다음은 빼세요: 슬라이드 제목, 그림 위아래의 설명 문장·글머리표(•) 목록, 학교 이름·로고, 과목명, 쪽 번호, 머리글·바닥글, 문제와 상관없는 다른 그림.",
-  "정답이 그림 속 글자로 그대로 적혀 있으면 그 부분은 영역에서 빼세요. 바깥쪽 여유는 1% 정도만 두세요."
+  "다음은 빼세요: 슬라이드 제목, 그림 위아래의 설명 문장·글머리표(•) 목록, 학교 이름·로고, 과목명, 쪽 번호, 머리글·바닥글, 문제와 상관없는 다른 그림,",
+  "그리고 출처·인용·저작권 문구(예: \"Adapted from Fig. …\", \"Data obtained from …\", \"copyright …\", \"Callister …\" 같은 작은 글 덩어리).",
+  "영역 경계가 글자를 반쯤 자르지 않게 하세요. 바깥쪽 여유는 1% 정도만 두세요.",
+  "figure_crop 안에 어쩔 수 없이 남는 위 같은 글 덩어리(그래프 안쪽에 붙은 출처 문구 등)는 hide 목록에 그 글 덩어리를 감싸는 네모를 넣으세요. 시험지에서 흰색으로 가려집니다.",
+  "hide는 그림의 선·점·사진·축·라벨을 덮으면 안 됩니다. 가릴 게 없으면 빈 목록 []. 정답이 그림 속 글자로 그대로 적혀 있으면 그 부분도 hide에 넣으세요."
 ].join("\n");
-const parseCrop = (raw) => {
-  const m = String(raw).match(/\[\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\]/);
-  return m ? m.slice(1, 5).map(Number) : null;
-};
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const isBox = (b) => Array.isArray(b) && b.length === 4 && b.every((v) => typeof v === "number" && isFinite(v));
+function parseCropReply(raw) {
+  const s = String(raw), a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a < 0 || b < a) return null;
+  try {
+    const o = JSON.parse(s.slice(a, b + 1));
+    if (!isBox(o.figure_crop)) return null;
+    const hide = (Array.isArray(o.hide) ? o.hide : []).filter(isBox).slice(0, 4)
+      .map((h) => h.map(clamp01)).filter(([x0, y0, x1, y1]) => x1 - x0 > 0.01 && y1 - y0 > 0.01 && (x1 - x0) * (y1 - y0) < 0.25);
+    return { crop: o.figure_crop, hide };
+  } catch { return null; }
+}
 async function refineCrops(exam, bufs, isCancelled) {
   const jobs = exam.questions.filter((q) => bufs.has(parseInt(q.figure, 10))).slice(0, 8);
   let fixed = 0;
@@ -97,11 +109,11 @@ async function refineCrops(exam, bufs, isCancelled) {
     const choices = Array.isArray(q.choices) ? "\n보기: " + q.choices.join(" / ") : "";
     const content = [
       { type: "image", source: { type: "base64", media_type: "image/jpeg", data: bufs.get(parseInt(q.figure, 10)).toString("base64") } },
-      { type: "text", text: `위 이미지는 강의자료 한 쪽입니다. 아래 시험 문제에 붙일 그림 영역을 잡아 주세요.\n[문제] ${String(q.question || "").slice(0, 500)}${choices.slice(0, 400)}\n\n${CROP_RULE}\n\nJSON 하나만 출력: {"figure_crop":[왼쪽,위,오른쪽,아래]} (이미지 전체 기준 0~1 비율, 소수 둘째 자리까지)` }
+      { type: "text", text: `위 이미지는 강의자료 한 쪽입니다. 아래 시험 문제에 붙일 그림 영역을 잡아 주세요.\n[문제] ${String(q.question || "").slice(0, 500)}${choices.slice(0, 400)}\n\n${CROP_RULE}\n\nJSON 하나만 출력: {"figure_crop":[왼쪽,위,오른쪽,아래],"hide":[[왼쪽,위,오른쪽,아래]]} (모두 이미지 전체 기준 0~1 비율, 소수 둘째 자리까지)` }
     ];
     try {
-      const crop = parseCrop(await askClaude(content, () => {}, () => {}, 90 * 1000));
-      if (crop && validCrop(crop)) { q.figure_crop = crop; fixed++; }
+      const r = parseCropReply(await askClaude(content, () => {}, () => {}, 90 * 1000));
+      if (r && validCrop(r.crop)) { q.figure_crop = r.crop; q.figure_hide = r.hide; fixed++; }
     } catch (e) { log("그림 영역 다듬기 실패:", e.message); }
   }));
   return fixed;
@@ -114,7 +126,13 @@ async function attachFigures(exam, bufs) {
   for (const q of exam.questions) {
     const n = parseInt(q.figure, 10);
     const crop = validCrop(q.figure_crop);
-    delete q.figure_crop;
+    // 가릴 칸이 잘라 낸 영역의 가장자리에 닿아 있으면 바깥 여유(pad)까지 늘림 → 경계에 글자 조각이 남지 않게
+    const raw = Array.isArray(q.figure_crop) ? q.figure_crop : [0, 0, 1, 1];
+    const near = (a, b) => Math.abs(a - b) < 0.025;
+    const hide = Array.isArray(q.figure_hide) && q.figure_hide.length ? q.figure_hide.map(([x0, y0, x1, y1]) => [
+      near(x0, raw[0]) ? 0 : x0, near(y0, raw[1]) ? 0 : y0, near(x1, raw[2]) ? 1 : x1, near(y1, raw[3]) ? 1 : y1
+    ].map((v) => Math.round(v * 1000) / 1000)) : null;
+    delete q.figure_crop; delete q.figure_hide;
     if (!bufs.has(n)) { delete q.figure; continue; }
     try {
       if (!uploaded.has(n)) {
@@ -122,7 +140,7 @@ async function attachFigures(exam, bufs) {
         await uploadFigure(path, bufs.get(n));
         uploaded.set(n, path);
       }
-      q.figure = { path: uploaded.get(n), crop };
+      q.figure = { path: uploaded.get(n), crop, ...(hide ? { hide } : {}) };
     } catch (e) {
       log("그림 올리기 실패:", e.message);
       delete q.figure;
