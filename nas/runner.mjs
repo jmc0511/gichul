@@ -68,7 +68,7 @@ function parseExam(raw) {
 /* ---------- 문제에 붙일 그림 ---------- */
 function validCrop(c) {
   if (!Array.isArray(c) || c.length !== 4 || c.some((v) => typeof v !== "number" || !isFinite(v))) return null;
-  const pad = 0.02;
+  const pad = 0.01; // Claude가 잡은 영역에서 아주 조금만 넓힘 (넓히면 슬라이드 제목·바닥글이 딸려 들어옴)
   let [x0, y0, x1, y1] = c.map((v) => Math.min(1, Math.max(0, v)));
   if (x1 < x0) [x0, x1] = [x1, x0];
   if (y1 < y0) [y0, y1] = [y1, y0];
