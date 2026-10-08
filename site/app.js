@@ -247,22 +247,30 @@
     return images * 10 + Math.min(paths, 400) / 10;
   }
 
+  // 다 읽은 PDF는 메모리에서 닫음 (아이패드에서 큰 PDF 여러 개를 열어 두면 탭이 꺼짐).
+  // 그림은 출제 요청을 보낼 때 파일에서 다시 열어 그 쪽만 그림
   async function readPdf(file) {
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
     const pages = [], visuals = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const tc = await page.getTextContent();
-      const text = tc.items.map((it) => (it.str || "") + (it.hasEOL ? "\n" : " ")).join("")
-        .replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-      pages.push(text);
-      let score = 0;
-      try { score = await pdfVisualScore(page, text.length); } catch (e) {}
-      if (score) visuals.push({ page: i - 1, score, render: () => renderPdfPage(pdf, i) });
-    }
+    try {
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const tc = await page.getTextContent();
+        const text = tc.items.map((it) => (it.str || "") + (it.hasEOL ? "\n" : " ")).join("")
+          .replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+        pages.push(text);
+        let score = 0;
+        try { score = await pdfVisualScore(page, text.length); } catch (e) {}
+        if (score) visuals.push({ page: i - 1, score, render: () => renderPdfFilePage(file, i) });
+        page.cleanup();
+      }
+    } finally { pdf.destroy(); }
     const chars = pages.reduce((a, p) => a + p.length, 0);
     return { pages, visuals, scanned: chars / Math.max(1, pages.length) < 40 };
+  }
+  async function renderPdfFilePage(file, n) {
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    try { return await renderPdfPage(pdf, n); } finally { pdf.destroy(); }
   }
 
   // 그림 폭·화질: Claude가 어차피 약 900px로 줄여 읽어서 1100px·75로도 판독은 같고 용량은 약 57%
@@ -322,7 +330,9 @@
         for (const mf of media) {
           const size = mf._data?.uncompressedSize || 0;
           if (size && size < 8000) continue; // 아이콘·로고 같은 작은 그림은 건너뜀
-          visuals.push({ page, score: text.length < 15 ? 1000 : 20, render: () => mediaToJpeg(mf) });
+          // 압축 파일을 메모리에 들고 있지 않도록, 그릴 때 파일에서 다시 열어 그 그림만 꺼냄
+          const path = mf.name;
+          visuals.push({ page, score: text.length < 15 ? 1000 : 20, render: async () => mediaToJpeg((await JSZip.loadAsync(await file.arrayBuffer())).file(path)) });
         }
         const m = relXml.match(/Target="\.\.\/notesSlides\/(notesSlide\d+\.xml)"/);
         const notes = m && zip.file("ppt/notesSlides/" + m[1]);
@@ -1497,8 +1507,26 @@
   const drop = $("drop");
   ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
   ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
-  drop.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
-  $("file").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
+  // 고른 파일을 바로 메모리로 복사해 둠. 아이패드 사파리는 파일 선택 칸을 비우면(value="")
+  // 아직 안 읽은 파일을 못 읽게 돼서, 여러 개 고르면 첫 번째만 되던 문제가 있었음
+  async function snapshotFiles(list) {
+    const picked = [...list];
+    const copies = await Promise.all(picked.map((f) => f.arrayBuffer()
+      .then((b) => new File([b], f.name, { type: f.type, lastModified: f.lastModified }))
+      .catch(() => null)));
+    const lost = picked.filter((_, i) => !copies[i]).map((f) => f.name);
+    if (lost.length) setStatus(`"${lost.join('", "')}"을(를) 읽지 못했어요. 다시 골라 주세요.`, true);
+    return copies.filter(Boolean);
+  }
+  drop.addEventListener("drop", async (e) => { if (e.dataTransfer && e.dataTransfer.files.length) addFiles(await snapshotFiles(e.dataTransfer.files)); });
+  $("file").addEventListener("change", async (e) => {
+    const input = e.target;
+    if (!input.files || !input.files.length) return;
+    setStatus(`파일 ${input.files.length}개 가져오는 중…`);
+    const files = await snapshotFiles(input.files);
+    input.value = ""; // 다 복사한 뒤에 비움 (같은 파일을 다시 고를 수 있게)
+    addFiles(files);
+  });
   $("filesAll").addEventListener("change", (e) => { const on = e.target.checked; state.files.forEach((f) => { if (f.checked !== on) toggleFile(f, on); }); renderFiles(); });
   $("go").addEventListener("click", submitRequest);
   // 채점하기 ↔ 다시 풀기 (시험 모드에서는 '시험 끝내기'와 시간 종료도 여기로)
