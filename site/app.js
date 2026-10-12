@@ -904,6 +904,7 @@
     // 완료된 요청은 "내 시험지"에 나오므로 요청 목록에서는 진행 중·실패만 보여줌
     const visible = requests.filter((r) => r.status !== "done").slice(0, 10);
     $("reqHead").hidden = !visible.length;
+    $("tipLine").hidden = !visible.some((r) => r.status === "pending" || r.status === "working");
     $("reqList").replaceChildren(...visible.map((r) => {
       const base = r.subject || (Array.isArray(r.files) ? r.files.join(", ") : "요청");
       const name = r.regen_exam != null ? `${r.regen_idx + 1}번 문제 다시 · ${base}` : base;
