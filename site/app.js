@@ -1015,6 +1015,7 @@
         }
       } else if (w && inNote) {
         if (w.lastRound === state.round) return; // 이번 채점에서 이미 반영함
+        if (state.exam.mock && !isDue(w)) return; // 모의고사에서는 복습할 날이 된 문제만 다음 단계로
         w.lastRound = state.round;
         w.stage = (w.stage || 0) + 1;
         if (w.stage >= GRADUATE) { wrongs.splice(idx, 1); graduated++; }
@@ -1030,22 +1031,41 @@
     renderLib();
   }
 
-  // filter: { due: 오늘 복습할 것만, subject: 과목 }
-  let noteFilter = { due: true, subject: "" };
+  const MOCK_SIZE = 10;
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  // 선지 순서 섞기 (자리로 외운 답 방지). "모두 옳다"처럼 순서에 기대는 선지가 있으면 그대로 둠
+  function shuffleChoices(q) {
+    // 해설이 "③번"처럼 번호로 정답을 가리켜도 섞으면 어긋나므로 그대로 둠
+    if (q.type !== "mc" || /[①-⑩]|\d\s*번/.test(q.explanation || "") || q.choices.some((c) => /모두|없음|해당|위의|[①-⑩]|all of|none of|above/i.test(c))) return q;
+    const order = shuffle(q.choices.map((_, k) => k));
+    return { ...q, choices: order.map((k) => q.choices[k]), answer: order.indexOf(q.answer - 1) + 1 };
+  }
+
+  // filter: { due: 오늘 복습할 것만, subject: 과목, mock: 오답 모의고사(섞어서 몇 문제, 0이면 끔) }
+  let noteFilter = { due: true, subject: "", mock: 0 };
   function openWrongNote(filter) {
     if (filter) noteFilter = { ...noteFilter, ...filter };
     const all = loadWrongs();
     let list = all.filter((w) => !noteFilter.subject || subjectOf(w) === noteFilter.subject);
-    if (noteFilter.due) list = list.filter(isDue);
+    if (noteFilter.due && !noteFilter.mock) list = list.filter(isDue);
     if (!list.length) {
       setStatus(noteFilter.due ? "오늘 복습할 문제를 다 풀었어요. 전체 풀기로 미리 볼 수도 있어요." : "오답노트가 비었어요.");
       renderLib();
       return false;
     }
+    const mock = noteFilter.mock;
+    if (mock) list = shuffle(list.slice()).slice(0, mock);
     state.exam = {
-      title: "오답노트" + (noteFilter.subject ? " · " + noteFilter.subject : ""),
-      subject: noteFilter.due ? `오늘 복습 ${list.length}문항` : `전체 ${list.length}문항`,
-      questions: list.map((w) => ({ ...w.q, _key: w.key, _from: w.from, _count: w.count, _exam: w.exam, _i: w.idx, _stage: w.stage || 0 }))
+      title: (mock ? "오답 모의고사" : "오답노트") + (noteFilter.subject ? " · " + noteFilter.subject : ""),
+      subject: mock ? `오답노트에서 섞어 뽑은 ${list.length}문항` : noteFilter.due ? `오늘 복습 ${list.length}문항` : `전체 ${list.length}문항`,
+      mock: !!mock,
+      questions: list.map((w) => {
+        const q = { ...w.q, _key: w.key, _from: w.from, _count: w.count, _exam: w.exam, _i: w.idx, _stage: w.stage || 0 };
+        return mock ? shuffleChoices(q) : q;
+      })
     };
     state.isExample = false; curExamId = NOTE_ID;
     resetRun();
@@ -1071,12 +1091,14 @@
       ...subjects.map((s) => { const o = el("option", { value: s, text: `${s} (${wrongs.filter((w) => subjectOf(w) === s).length})` }); o.selected = s === noteFilter.subject; return o; })) : null;
     return el("li", { class: "note-item" + (viewing ? " cur" : "") },
       el("span", { class: "t", text: `오답노트 · ${pool.length}문항` }),
-      el("button", { type: "button", class: "open", text: due ? `오늘 복습 ${due}` : "전체 풀기", onclick: () => openWrongNote({ due: !!due }) }),
+      el("button", { type: "button", class: "open", text: due ? `오늘 복습 ${due}` : "전체 풀기", onclick: () => openWrongNote({ due: !!due, mock: 0 }) }),
       picker ? el("span", { class: "s" }, picker) : null,
       el("span", { class: "s row" },
         el("span", { text: sub }),
         el("span", { class: "acts" },
-          due ? el("button", { type: "button", class: "link retry", text: "전체 풀기", onclick: () => openWrongNote({ due: false }) }) : null,
+          due ? el("button", { type: "button", class: "link retry", text: "전체 풀기", onclick: () => openWrongNote({ due: false, mock: 0 }) }) : null,
+          pool.length >= 3 ? el("button", { type: "button", class: "link retry", title: "오답노트에서 무작위로 뽑고 선지 순서도 섞어요",
+            text: `🎲 모의고사 ${Math.min(MOCK_SIZE, pool.length)}문제`, onclick: () => openWrongNote({ mock: MOCK_SIZE }) }) : null,
           confirmButton("비우기", noteFilter.subject ? "이 과목 비울까요?" : "정말 비울까요?", () => {
             saveWrongs(noteFilter.subject ? wrongs.filter((w) => subjectOf(w) !== noteFilter.subject) : []);
             if (viewing) { state.exam = EXAMPLE; state.isExample = true; curExamId = null; resetRun(); persist(); renderAll(); }
@@ -1536,7 +1558,7 @@
     if (state.graded) {
       // 오답노트를 다시 풀면 맞혀서 넘어간 문제를 뺀 새 노트로 시작
       if (curExamId === NOTE_ID) {
-        if (openWrongNote()) return;
+        if (openWrongNote(state.exam.mock ? { mock: MOCK_SIZE } : null)) return;
         state.exam = EXAMPLE; state.isExample = true; curExamId = null;
       }
       resetRun(); persist();
