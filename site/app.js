@@ -518,7 +518,7 @@
     else {
       const pages = ready.reduce((a, f) => a + f.pages.length, 0);
       const vis = ready.reduce((a, f) => a + f.visuals.length, 0);
-      setStatus(`자료 ${ready.length}개 · ${pages}쪽 준비됨` + (vis ? ` · 그림 ${Math.min(vis, MAX_IMAGES)}장 함께 보냄` + (vis > MAX_IMAGES ? ` (${vis}장 중 중요한 것만)` : "") : ""));
+      setStatus(`자료 ${ready.length}개 · ${pages}쪽 읽기 완료` + (vis ? ` · 그림 ${Math.min(vis, MAX_IMAGES)}장 함께 보냄` + (vis > MAX_IMAGES ? ` (${vis}장 중 중요한 것만)` : "") : "") + ". 위 '출제 요청 보내기'를 눌러야 시험지를 만들기 시작해요.");
     }
   }
 
