@@ -579,7 +579,7 @@
   function buildInstructions() {
     const count = document.querySelector('input[name="count"]:checked').value;
     const types = [...document.querySelectorAll('input[name="type"]:checked')].map((i) => i.value);
-    const level = document.querySelector('input[name="level"]:checked').value;
+    const levels = [...document.querySelectorAll('input[name="level"]:checked')].map((i) => i.value);
     const subject = $("subject").value.trim();
     const extra = $("extra").value.trim();
     const areas = [...document.querySelectorAll('input[name="area"]:checked')].map((i) => i.value);
@@ -607,7 +607,7 @@
       `- 시험명: ${subject || "자료 내용에 맞게 정하세요"}`,
       `- 문항 수: 정확히 ${count}문항`,
       `- 유형: ${types.map((t) => typeDesc[t]).join(", ")} (여러 유형이면 고르게 섞되 객관식 비중을 가장 크게)`,
-      `- 난이도: ${level}`,
+      levels.length > 1 ? `- 난이도: ${levels.join(", ")}을 섞어서 (고른 난이도마다 비슷한 수의 문항, 쉬운 문제부터 어려운 문제 순으로 배치)` : `- 난이도: ${levels[0]}`,
       extra ? `- 추가 요청: ${extra}` : null,
       "",
       "[출제 원칙]",
@@ -634,6 +634,7 @@
 
   async function submitRequest() {
     if (!document.querySelectorAll('input[name="type"]:checked').length) { setStatus("문제 유형을 하나 이상 고르세요.", true); return; }
+    if (!document.querySelectorAll('input[name="level"]:checked').length) { setStatus("난이도를 하나 이상 고르세요.", true); return; }
     askNotify();
     const picked = pickImages();
     const material = buildMaterial(picked);
