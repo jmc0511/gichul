@@ -309,10 +309,19 @@ async function fixReport(examId, idx) {
           { type: "image", source: { type: "base64", media_type: "image/jpeg", data: buf.toString("base64") } });
       } catch (e) { log(`${tag} 그림 받기 실패: ${e.message}`); }
     }
+    // 원래 자료의 그림·사진 쪽 (사진으로만 올린 자료는 이게 자료 전부)
+    let nImg = 0;
+    for (const im of material ? src?.images || [] : []) {
+      try {
+        const buf = await downloadImage(im.path);
+        content.push({ type: "text", text: im.label }, { type: "image", source: { type: "base64", media_type: "image/jpeg", data: buf.toString("base64") } });
+        nImg++;
+      } catch (e) { log(`${tag} ${e.message}`); }
+    }
     content.push({ type: "text", text: `${FIX_RULE}\n\n[신고된 문제 (${idx + 1}번)]\n${JSON.stringify(shown, null, 1)}\n\n[신고 내용 ${claimed.length}건]\n${notes}\n\n` +
-      (material ? `[공부자료 원문]\n${material}` : "[공부자료] 보관 기간이 지나 원문이 없습니다. 문제 자체의 논리와 일반적으로 확립된 지식으로만 판단하고, 확실하지 않으면 ok로 두세요.") +
+      (material ? `[공부자료 원문]\n${material}` + (nImg ? `\n\n[첨부 이미지] 위에 자료 속 그림·사진 ${nImg}장을 붙였습니다. 본문의 "[이 쪽의 그림: 첨부 이미지 #n]" 표시와 이미지 이름으로 어느 쪽인지 알 수 있습니다. 사진 속 글자도 자료로 읽어 대조하세요.` : "") :"[공부자료] 보관 기간이 지나 원문이 없습니다. 문제 자체의 논리와 일반적으로 확립된 지식으로만 판단하고, 확실하지 않으면 ok로 두세요.") +
       "\n\n[다시 한 번] 위 형식의 JSON 하나만 출력하세요." });
-    log(`${tag} 검토 시작 (신고 ${claimed.length}건${material ? "" : ", 자료 없음"})`);
+    log(`${tag} 검토 시작 (신고 ${claimed.length}건${material ? (nImg ? `, 자료 그림 ${nImg}장` : "") : ", 자료 없음"})`);
 
     let reply, lastErr;
     for (let attempt = 1; attempt <= 2 && !reply; attempt++) {

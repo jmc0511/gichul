@@ -85,7 +85,7 @@ export async function claimReports(examId, idx) {
 
 /** 시험지를 만든 원래 요청의 자료 (14일 지나면 material 이 비어 있음) */
 export async function examSource(examId) {
-  const [r] = await call("GET", `/requests?exam_id=eq.${examId}&regen_exam=is.null&select=instructions,material&limit=1`);
+  const [r] = await call("GET", `/requests?exam_id=eq.${examId}&regen_exam=is.null&select=instructions,material,images&limit=1`);
   return r || null;
 }
 
