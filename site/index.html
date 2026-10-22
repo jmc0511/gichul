@@ -33,127 +33,178 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
+<header class="top">
+  <div class="top-in">
     <div class="brand">
       <h1>기<b>추리</b></h1>
       <p>내 자료로 뽑는 예상 기출</p>
     </div>
+    <nav class="tabs" aria-label="메뉴">
+      <a class="tab" id="tabMake" href="#make" data-tab="make">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>출제하기</span></a>
+      <a class="tab" id="tabBook" href="#book" data-tab="book">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z"/><path d="M8 7h6M8 11h6"/></svg><span>문제집</span><span class="cnt" id="cntBook" hidden></span></a>
+      <a class="tab" id="tabWrong" href="#wrong" data-tab="wrong">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12l4 4L19 6"/><path d="M4 20h16"/></svg><span>오답노트</span><span class="cnt" id="cntWrong" hidden></span></a>
+    </nav>
     <div class="top-actions">
       <div class="account" id="account"></div>
       <button class="btn help-btn" id="tourBtn" type="button">사용법</button>
     </div>
-  </header>
-
-  <div class="grid">
-    <aside class="panel" aria-label="출제 설정">
-      <div class="step">
-        <h2><span>1</span>공부자료</h2>
-        <label class="drop" id="drop" for="file">
-          <strong>PDF·PPTX·사진을 끌어다 놓거나 눌러서 선택</strong>
-          <small>강의노트, 강의 슬라이드, 교재·필기 사진 · 여러 개 가능</small>
-          <input type="file" id="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*" multiple>
-        </label>
-        <div class="files-head" id="filesHead" hidden>
-          <span class="files-note">내 자료함 · <span id="filesCount"></span></span>
-          <label class="files-all"><input type="checkbox" id="filesAll"> 모두 선택</label>
-        </div>
-        <ul class="files" id="files"></ul>
-        <p class="files-tip" id="filesTip">올린 자료는 이 기기에 보관돼요. 체크한 자료만 출제에 쓰여요.</p>
-      </div>
-
-      <div class="step">
-        <h2><span>2</span>출제 조건</h2>
-        <div class="field">
-          <label for="subject">과목 / 시험명</label>
-          <input type="text" id="subject" placeholder="예: 운영체제 중간고사">
-        </div>
-        <div class="field">
-          <span class="lbl">문항 수</span>
-          <div class="seg" role="radiogroup" aria-label="문항 수">
-            <label><input type="radio" name="count" id="c5" value="5"><span class="num">5</span></label>
-            <label><input type="radio" name="count" id="c10" value="10" checked><span class="num">10</span></label>
-            <label><input type="radio" name="count" id="c15" value="15"><span class="num">15</span></label>
-            <label><input type="radio" name="count" id="c20" value="20"><span class="num">20</span></label>
-          </div>
-        </div>
-        <div class="field">
-          <span class="lbl">문제 유형</span>
-          <div class="seg" aria-label="문제 유형">
-            <label><input type="checkbox" name="type" id="t-mc" value="mc" checked><span>객관식 5지선다</span></label>
-            <label><input type="checkbox" name="type" id="t-ox" value="ox"><span>O / X</span></label>
-            <label><input type="checkbox" name="type" id="t-short" value="short" checked><span>단답형</span></label>
-            <label><input type="checkbox" name="type" id="t-essay" value="essay"><span>서술형</span></label>
-          </div>
-        </div>
-        <div class="field">
-          <span class="lbl">외국어 영역 <span style="font-weight:400;color:var(--muted)">(외국어 시험일 때)</span></span>
-          <div class="seg" aria-label="외국어 영역">
-            <label><input type="checkbox" name="area" id="a-vocab" value="어휘"><span>어휘</span></label>
-            <label><input type="checkbox" name="area" id="a-grammar" value="문법"><span>문법</span></label>
-            <label><input type="checkbox" name="area" id="a-reading" value="독해"><span>독해</span></label>
-            <label><input type="checkbox" name="area" id="a-trans" value="해석·작문"><span>해석·작문</span></label>
-          </div>
-        </div>
-        <div class="field">
-          <span class="lbl">문제 언어</span>
-          <div class="seg" role="radiogroup" aria-label="문제 언어">
-            <label><input type="radio" name="lang" id="lang-ko" value="ko" checked><span>한국어</span></label>
-            <label><input type="radio" name="lang" id="lang-src" value="src"><span>자료 언어 그대로</span></label>
-            <label><input type="radio" name="lang" id="lang-mix" value="mix"><span>문제는 외국어 · 해설은 한국어</span></label>
-          </div>
-        </div>
-        <div class="field">
-          <span class="lbl">난이도 <span style="font-weight:400;color:var(--muted)">(여러 개 고르면 섞어서)</span></span>
-          <div class="seg" aria-label="난이도">
-            <label><input type="checkbox" name="level" id="l1" value="기본 개념 확인"><span>기본</span></label>
-            <label><input type="checkbox" name="level" id="l2" value="실제 시험 수준" checked><span>실전</span></label>
-            <label><input type="checkbox" name="level" id="l3" value="상위권 변별용 고난도"><span>고난도</span></label>
-          </div>
-        </div>
-        <div class="field">
-          <span class="lbl">문제에 그림 <span style="font-weight:400;color:var(--muted)">(그래프·회로도를 문제에 붙일지)</span></span>
-          <div class="seg" role="radiogroup" aria-label="문제에 그림">
-            <label><input type="radio" name="fig" id="fig-on" value="on" checked><span>넣기</span></label>
-            <label><input type="radio" name="fig" id="fig-off" value="off"><span>빼기 · 글로만</span></label>
-          </div>
-        </div>
-        <div class="field">
-          <label for="extra">추가 요청 <span style="font-weight:400;color:var(--muted)">(선택)</span></label>
-          <textarea id="extra" placeholder="예: 3장 스케줄링 위주로, 계산 문제 2개 이상"></textarea>
-        </div>
-      </div>
-
-      <button class="go" id="go" type="button" disabled>출제 요청 보내기</button>
-      <p class="quota" id="quota" hidden></p>
-      <p class="status" id="status" aria-live="polite">PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.</p>
-
-      <div class="step">
-        <h2><span>3</span>문제집</h2>
-        <p class="lib-h" id="reqHead" hidden>내 출제 요청</p>
-        <ul class="lib" id="reqList"></ul>
-        <p class="tip" id="tipLine" hidden>지금 이 문제, 제 통장에서 만들어지는 중이에요… 🥲 <a href="https://qr.kakaopay.com/FDpdirbGk" target="_blank" rel="noopener">커피 한 잔으로 살려주기 ☕</a></p>
-        <p class="lib-h">내 시험지</p>
-        <ul class="lib" id="examList"></ul>
-      </div>
-    </aside>
-
-    <main class="sheet" id="sheet" aria-label="시험지"></main>
-
-    <aside class="omr" aria-label="OMR 답안지">
-      <div class="omr-head"><span>답안지</span><span id="omrCount"></span></div>
-      <div class="omr-score"><span class="big" id="scoreBig">–</span><small id="scoreSub">답을 고른 뒤 채점하세요</small></div>
-      <div class="omr-rows" id="omrRows"></div>
-      <div class="omr-actions">
-        <button class="btn primary" id="grade" type="button">채점하기</button>
-        <button class="btn" id="showAll" type="button">해설 모두 보기</button>
-        <button class="btn" id="reset" type="button">답안 지우기</button>
-        <button class="btn" id="print" type="button">인쇄 · PDF 저장</button>
-        <button class="btn" id="printKey" type="button">정답 포함 인쇄</button>
-        <button class="link save-txt" id="save" type="button">텍스트 파일로 저장</button>
-      </div>
-    </aside>
   </div>
+</header>
+
+<main class="wrap">
+  <!-- 출제하기 -->
+  <section class="view" id="view-make" data-view="make" aria-label="출제하기">
+    <div class="page-head">
+      <div><h2>내 자료로 예상 기출 뽑기</h2><p>자료를 올리고 조건을 고른 뒤 요청을 보내면, 1~2분 뒤 문제집에 시험지가 올라와요.</p></div>
+    </div>
+    <div class="make">
+      <div class="steps">
+        <div class="step" id="fileStep">
+          <div class="step-h"><span class="no">1</span><h3>공부자료 올리기</h3><span class="state" id="fileState"></span></div>
+          <label class="drop" id="drop" for="file">
+            <span class="ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 20h16"/></svg></span>
+            <span class="drop-t"><strong>PDF·PPTX·사진을 끌어다 놓거나 눌러서 선택</strong><small>강의노트, 강의 슬라이드, 교재·필기 사진 · 여러 개 가능</small></span>
+            <input type="file" id="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*" multiple>
+          </label>
+          <div class="files-head" id="filesHead" hidden>
+            <span class="files-note">내 자료함 · <span id="filesCount"></span></span>
+            <label class="files-all"><input type="checkbox" id="filesAll"> 모두 선택</label>
+          </div>
+          <ul class="files" id="files"></ul>
+          <p class="files-tip" id="filesTip">올린 자료는 이 기기에 보관돼요. 체크한 자료만 출제에 쓰여요.</p>
+        </div>
+
+        <div class="step" id="condStep">
+          <div class="step-h"><span class="no">2</span><h3>출제 조건</h3><span class="state">기본값 그대로 보내도 돼요</span></div>
+          <div class="cond">
+            <div class="field">
+              <span class="lbl">문항 수</span>
+              <div class="seg" role="radiogroup" aria-label="문항 수">
+                <label><input type="radio" name="count" id="c5" value="5"><span class="num">5</span></label>
+                <label><input type="radio" name="count" id="c10" value="10" checked><span class="num">10</span></label>
+                <label><input type="radio" name="count" id="c15" value="15"><span class="num">15</span></label>
+                <label><input type="radio" name="count" id="c20" value="20"><span class="num">20</span></label>
+              </div>
+            </div>
+            <div class="field">
+              <span class="lbl">문제 유형</span>
+              <div class="seg" aria-label="문제 유형">
+                <label><input type="checkbox" name="type" id="t-mc" value="mc" checked><span>객관식 5지선다</span></label>
+                <label><input type="checkbox" name="type" id="t-ox" value="ox"><span>O / X</span></label>
+                <label><input type="checkbox" name="type" id="t-short" value="short" checked><span>단답형</span></label>
+                <label><input type="checkbox" name="type" id="t-essay" value="essay"><span>서술형</span></label>
+              </div>
+            </div>
+            <div class="field">
+              <span class="lbl">난이도 <small>여러 개 고르면 섞어서</small></span>
+              <div class="seg" aria-label="난이도">
+                <label><input type="checkbox" name="level" id="l1" value="기본 개념 확인"><span>기본</span></label>
+                <label><input type="checkbox" name="level" id="l2" value="실제 시험 수준" checked><span>실전</span></label>
+                <label><input type="checkbox" name="level" id="l3" value="상위권 변별용 고난도"><span>고난도</span></label>
+              </div>
+            </div>
+          </div>
+          <details class="more" id="more">
+            <summary>자세히 <em id="moreHint">과목명 · 문제 언어 · 외국어 영역 · 그림 · 추가 요청</em></summary>
+            <div class="more-in">
+              <div class="field">
+                <label class="lbl" for="subject">과목 / 시험명</label>
+                <input type="text" id="subject" placeholder="예: 운영체제 중간고사">
+              </div>
+              <div class="field">
+                <span class="lbl">문제에 그림 <small>그래프·회로도를 문제에 붙일지</small></span>
+                <div class="seg" role="radiogroup" aria-label="문제에 그림">
+                  <label><input type="radio" name="fig" id="fig-on" value="on" checked><span>넣기</span></label>
+                  <label><input type="radio" name="fig" id="fig-off" value="off"><span>빼기 · 글로만</span></label>
+                </div>
+              </div>
+              <div class="field">
+                <span class="lbl">문제 언어</span>
+                <div class="seg" role="radiogroup" aria-label="문제 언어">
+                  <label><input type="radio" name="lang" id="lang-ko" value="ko" checked><span>한국어</span></label>
+                  <label><input type="radio" name="lang" id="lang-src" value="src"><span>자료 언어 그대로</span></label>
+                  <label><input type="radio" name="lang" id="lang-mix" value="mix"><span>문제는 외국어 · 해설은 한국어</span></label>
+                </div>
+              </div>
+              <div class="field">
+                <span class="lbl">외국어 영역 <small>외국어 시험일 때</small></span>
+                <div class="seg" aria-label="외국어 영역">
+                  <label><input type="checkbox" name="area" id="a-vocab" value="어휘"><span>어휘</span></label>
+                  <label><input type="checkbox" name="area" id="a-grammar" value="문법"><span>문법</span></label>
+                  <label><input type="checkbox" name="area" id="a-reading" value="독해"><span>독해</span></label>
+                  <label><input type="checkbox" name="area" id="a-trans" value="해석·작문"><span>해석·작문</span></label>
+                </div>
+              </div>
+              <div class="field wide">
+                <label class="lbl" for="extra">추가 요청 <small>선택</small></label>
+                <textarea id="extra" placeholder="예: 3장 스케줄링 위주로, 계산 문제 2개 이상"></textarea>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <aside class="send" id="send" aria-label="요청 보내기">
+        <h3><span class="no">3</span>요청 보내기</h3>
+        <dl class="summary">
+          <dt>자료</dt><dd id="sumFiles">아직 없음</dd>
+          <dt>문항</dt><dd id="sumCount"></dd>
+          <dt>난이도</dt><dd id="sumLevel"></dd>
+        </dl>
+        <button class="go" id="go" type="button" disabled>출제 요청 보내기</button>
+        <p class="hint">누르면 1~2분 뒤 <b>문제집</b>에 시험지가 올라와요</p>
+        <ol class="flow" id="flow" aria-label="진행 단계"><li>자료 읽기</li><li>요청 보내기</li><li>출제 중</li><li>문제집 도착</li></ol>
+        <p class="status" id="status" aria-live="polite">PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.</p>
+        <p class="quota" id="quota" hidden></p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 문제집 -->
+  <section class="view" id="view-book" data-view="book" aria-label="문제집" hidden>
+    <div class="page-head">
+      <div><h2>문제집</h2><p>요청한 시험지와 친구가 보낸 시험지가 여기에 쌓여요.</p></div>
+      <a class="btn primary" href="#make">＋ 새로 출제</a>
+    </div>
+    <p class="section-t" id="reqHead" hidden><span class="pulse" aria-hidden="true"></span>내 출제 요청</p>
+    <ul class="runs" id="reqList"></ul>
+    <p class="tip" id="tipLine" hidden>지금 이 문제, 제 통장에서 만들어지는 중이에요… 🥲 <a href="https://qr.kakaopay.com/FDpdirbGk" target="_blank" rel="noopener">커피 한 잔으로 살려주기 ☕</a></p>
+    <p class="section-t" id="examHead">내 시험지</p>
+    <ul class="cards" id="examList"></ul>
+  </section>
+
+  <!-- 시험지 풀기 -->
+  <section class="view" id="view-exam" data-view="exam" aria-label="시험지" hidden>
+    <a class="back" id="backBtn" href="#book">← 문제집</a>
+    <div class="solve">
+      <div class="sheet" id="sheet" role="region" aria-label="시험지"></div>
+
+      <aside class="omr" aria-label="OMR 답안지">
+        <div class="omr-head"><span>답안지</span><span id="omrCount"></span></div>
+        <div class="omr-score"><span class="big" id="scoreBig">–</span><small id="scoreSub">답을 고른 뒤 채점하세요</small></div>
+        <div class="omr-rows" id="omrRows"></div>
+        <div class="omr-actions">
+          <button class="btn primary" id="grade" type="button">채점하기</button>
+          <button class="btn" id="showAll" type="button">해설 모두 보기</button>
+          <button class="btn" id="reset" type="button">답안 지우기</button>
+          <button class="btn" id="print" type="button">인쇄 · PDF 저장</button>
+          <button class="btn" id="printKey" type="button">정답 포함 인쇄</button>
+          <button class="link save-txt" id="save" type="button">텍스트 파일로 저장</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 오답노트 -->
+  <section class="view" id="view-wrong" data-view="wrong" aria-label="오답노트" hidden>
+    <div class="page-head">
+      <div><h2>오답노트</h2><p>틀린 문제는 바로, 맞히면 1일·3일 뒤 다시 나와요. 3번 맞히면 졸업.</p></div>
+    </div>
+    <div id="notePage"></div>
+  </section>
 
   <footer class="foot-links">
     <a href="privacy.html">개인정보처리방침</a>
@@ -164,7 +215,9 @@
     <span aria-hidden="true">·</span>
     <span>AI가 만든 문제라 틀릴 수 있어요. 이상하면 '문제 신고'를 눌러 주세요.</span>
   </footer>
-</div>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <dialog class="support-dlg" id="supportDlg" aria-label="기추리 제작자 살려주기">
   <p class="support-t">🥲 기추리 제작자 살려주세요…</p>

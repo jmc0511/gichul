@@ -48,6 +48,7 @@
   }) : null;
 
   let exams = [], requests = [], curExamId = null, pollTimer = null;
+  let view = "make", examBack = "book", unseen = 0;
 
   /* ---------- 저장(내 브라우저에만) ---------- */
   function store(key, val) {
@@ -131,14 +132,14 @@
     if (!user) {
       box.replaceChildren(
         el("button", { type: "button", class: "btn", text: "게스트로 시작", onclick: signInGuest, title: "이 기기에서 바로 시작해요. 나중에 구글 계정을 연결할 수 있어요." }),
-        el("button", { type: "button", class: "btn google", onclick: signInGoogle }, el("span", { class: "g", text: "G" }), "구글로 로그인"));
+        el("button", { type: "button", class: "btn google", onclick: signInGoogle }, el("span", { class: "g", text: "G" }), el("span", { class: "long", text: "구글로 " }), "로그인"));
       return;
     }
     const name = user.is_anonymous ? "게스트" : (user.user_metadata?.name || user.email || "내 계정");
     const parts = [
       el("span", { class: "who", title: user.is_anonymous ? "이 기기에서만 이어서 쓸 수 있어요. 구글 계정을 연결하면 다른 기기에서도 볼 수 있어요." : user.email || "" },
         el("span", { class: "dot" + (user.is_anonymous ? " guest" : "") }), name),
-      user.is_anonymous ? el("button", { type: "button", class: "btn google", onclick: signInGoogle }, el("span", { class: "g", text: "G" }), "구글 계정 연결") : null,
+      user.is_anonymous ? el("button", { type: "button", class: "btn google", onclick: signInGoogle }, el("span", { class: "g", text: "G" }), el("span", { class: "long", text: "구글 계정 " }), "연결") : null,
       // 게스트는 로그아웃하면 다시 들어올 방법이 없어서 한 번 더 확인
       user.is_anonymous
         ? confirmButton("로그아웃", "기록이 사라져요. 정말?", signOut)
@@ -212,7 +213,7 @@
     rememberExam(id);
     exams = [data[0], ...exams.filter((x) => x.id !== id)];
     openExam(id);
-    history.replaceState(null, "", location.pathname);
+    history.replaceState(null, "", location.pathname + "#exam");
   }
 
   /* ---------- 작은 DOM 도우미 ---------- */
@@ -227,7 +228,17 @@
     for (const k of kids) if (k != null) n.append(k);
     return n;
   }
-  function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
+  // 안내 문구: 출제하기 화면의 상태 줄에 쓰고, 다른 화면을 보고 있으면 잠깐 알림으로도 띄움.
+  // quiet = 자료 상태처럼 계속 바뀌는 안내 (알림으로 띄우지 않음)
+  let toastTimer = null;
+  function setStatus(msg, err, quiet) {
+    const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err);
+    if (quiet || view === "make" || !msg) return;
+    const t = $("toast");
+    t.textContent = msg; t.classList.toggle("err", !!err); t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, err ? 7000 : 4500);
+  }
   function when(iso) {
     try { return new Date(iso).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; }
   }
@@ -501,25 +512,66 @@
       const cb = el("input", { type: "checkbox", id: "file-" + f.id, "aria-label": f.name + " 출제에 쓰기" });
       cb.checked = !!f.checked;
       cb.addEventListener("change", () => toggleFile(f, cb.checked));
-      return el("li", { class: f.checked ? "" : "off" },
+      return el("li", { class: f.checked ? "on" : "off" },
         cb,
-        el("label", { class: "nm", for: "file-" + f.id, title: f.name, text: f.name }),
-        el("span", { class: "meta" + (f.failed ? " warn" : ""), text: meta, title: f.scanned ? "글자가 없는 쪽은 이미지로 보내 Claude가 직접 읽습니다" : null }),
-        el("button", { type: "button", "aria-label": f.name + " 자료함에서 지우기", title: "자료함에서 지우기", text: "×", onclick: () => removeFile(f) })
+        el("span", { class: "nm-wrap" },
+          el("label", { class: "nm", for: "file-" + f.id, title: f.name, text: f.name }),
+          el("span", { class: "meta" + (f.failed ? " warn" : ""), text: meta, title: f.scanned ? "글자가 없는 쪽은 이미지로 보내 Claude가 직접 읽습니다" : null })),
+        el("button", { type: "button", class: "x", "aria-label": f.name + " 자료함에서 지우기", title: "자료함에서 지우기", text: "지우기", onclick: () => removeFile(f) })
       );
     }));
     const ready = activeFiles();
     const block = quotaBlock();
-    $("go").disabled = !sb || state.busy || !ready.length || all.some((f) => f.checked && f.loading) || !!block;
+    const loading = all.some((f) => f.checked && f.loading);
+    $("go").disabled = !sb || state.busy || !ready.length || loading || !!block;
+    const pages = ready.reduce((a, f) => a + f.pages.length, 0);
+    const vis = ready.reduce((a, f) => a + f.visuals.length, 0);
+    $("fileState").textContent = loading ? "읽는 중…" : ready.length ? `✓ ${ready.length}개 읽기 완료 · ${pages}쪽` : "";
+    $("fileStep").classList.toggle("done", !!ready.length && !loading);
+    $("condStep").classList.toggle("now", !!ready.length);
+    $("sumFiles").textContent = ready.length ? `${ready.length}개 · ${pages}쪽` + (vis ? ` · 그림 ${Math.min(vis, MAX_IMAGES)}장` : "") : loading ? "읽는 중…" : "아직 없음";
+    renderSend();
     if (state.busy) return;
-    if (block && ready.length) { setStatus(block, true); return; }
-    if (!sb) setStatus("사이트 설정이 끝나지 않았습니다. config.js에 Supabase 주소와 공개 키를 넣어 주세요.", true);
-    else if (!ready.length) setStatus(all.length ? "출제에 쓸 자료를 체크해 주세요." : "PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.");
+    if (block && ready.length) { setStatus(block, true, true); return; }
+    if (!sb) setStatus("사이트 설정이 끝나지 않았습니다. config.js에 Supabase 주소와 공개 키를 넣어 주세요.", true, true);
+    else if (!ready.length) setStatus(all.length ? "출제에 쓸 자료를 체크해 주세요." : "PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.", false, true);
     else {
-      const pages = ready.reduce((a, f) => a + f.pages.length, 0);
-      const vis = ready.reduce((a, f) => a + f.visuals.length, 0);
-      setStatus(`자료 ${ready.length}개 · ${pages}쪽 읽기 완료` + (vis ? ` · 그림 ${Math.min(vis, MAX_IMAGES)}장 함께 보냄` + (vis > MAX_IMAGES ? ` (${vis}장 중 중요한 것만)` : "") : "") + ". 위 '출제 요청 보내기'를 눌러야 시험지를 만들기 시작해요.");
+      setStatus(`자료 ${ready.length}개 · ${pages}쪽 읽기 완료` + (vis ? ` · 그림 ${Math.min(vis, MAX_IMAGES)}장 함께 보냄` + (vis > MAX_IMAGES ? ` (${vis}장 중 중요한 것만)` : "") : "") + ". '출제 요청 보내기'를 눌러야 시험지를 만들기 시작해요.", false, true);
     }
+  }
+
+  /* 보내기 카드: 고른 조건 요약과 진행 단계 */
+  const checkedVals = (name) => [...document.querySelectorAll(`input[name="${name}"]:checked`)];
+  function renderSend() {
+    const count = checkedVals("count")[0]?.value || "10";
+    const types = checkedVals("type").map((i) => TYPE_LABEL[i.value]);
+    $("sumCount").textContent = `${count}문항 · ` + (types.length ? types.join("·") : "유형을 골라 주세요");
+    const levels = checkedVals("level").map((i) => i.nextElementSibling.textContent);
+    $("sumLevel").textContent = levels.length ? levels.join(" + ") + (levels.length > 1 ? " 섞어서" : "") : "난이도를 골라 주세요";
+    // '자세히' 안에서 바꾼 것이 있으면 접힌 상태에서도 보이게
+    const set = [];
+    if ($("subject").value.trim()) set.push($("subject").value.trim());
+    if (checkedVals("fig")[0]?.value === "off") set.push("그림 빼기");
+    const lang = checkedVals("lang")[0];
+    if (lang && lang.value !== "ko") set.push(lang.nextElementSibling.textContent);
+    const areas = checkedVals("area").map((i) => i.value);
+    if (areas.length) set.push(areas.join("·"));
+    if ($("extra").value.trim()) set.push("추가 요청 있음");
+    $("moreHint").textContent = set.length ? "바꾼 것: " + set.join(" · ") : "과목명 · 문제 언어 · 외국어 영역 · 그림 · 추가 요청";
+    $("moreHint").classList.toggle("set", !!set.length);
+    renderFlow();
+  }
+  // 자료 읽기 → 요청 보내기 → 출제 중 → 문제집 도착
+  function renderFlow() {
+    const ready = activeFiles().length > 0;
+    const live = state.busy || requests.some((r) => r.status === "pending" || r.status === "working");
+    const marks = [
+      ready || live ? "ok" : state.files.some((f) => f.checked && f.loading) ? "on" : "",
+      live ? "ok" : ready ? "on" : "",
+      live ? "on" : "",
+      unseen ? "on" : ""
+    ];
+    [...$("flow").children].forEach((li, k) => { li.className = marks[k]; });
   }
 
   /* ---------- 요청 한도 ---------- */
@@ -675,8 +727,9 @@
       notifyWorker();
       state.busy = false; // 자료는 자료함에 그대로 둠 (다음 출제에 다시 체크해서 쓸 수 있게)
       renderFiles();
-      setStatus("요청을 보냈습니다. 출제가 끝나면 아래 문제집에 시험지가 올라옵니다.");
       await refresh();
+      go("book"); // 진행 상황은 문제집에서 보임
+      setStatus("요청을 보냈어요. 보통 1~2분 뒤 이 문제집에 시험지가 올라와요.");
     } catch (e) {
       state.busy = false;
       renderFiles();
@@ -813,6 +866,7 @@
     const msg = !ok ? `"${name}" 출제에 실패했어요. 문제집에서 다시 시도할 수 있어요.`
       : isRegen ? `${r.regen_idx + 1}번 문제를 새 문제로 바꿨어요.`
       : `"${name}" 시험지가 완성됐어요. 문제집에서 열어 보세요.`;
+    if (ok && !isRegen && view !== "book") { unseen++; renderBadges(); }
     if (!state.busy) setStatus(msg, !ok);
     // 보고 있던 시험지의 문제가 바뀌었으면 그 문제만 새로 그림
     if (ok && isRegen && curExamId === r.regen_exam) reloadExam(r.regen_exam, r.regen_idx);
@@ -852,7 +906,16 @@
     state.isExample = false; curExamId = id;
     resetRun();
     persist(); renderAll(); renderLib();
-    $("sheet").scrollIntoView({ behavior: "smooth", block: "start" });
+    examBack = "book";
+    go("exam");
+  }
+  // 예시 시험지 (아직 내 시험지가 없을 때 둘러보기)
+  function openExample() {
+    state.exam = EXAMPLE; state.isExample = true; curExamId = null;
+    resetRun();
+    persist(); renderAll(); renderLib();
+    examBack = "book";
+    go("exam");
   }
 
   /* 한 번 누르면 "정말?"으로 바뀌고, 4초 안에 다시 누르면 실행 */
@@ -881,6 +944,7 @@
       state.exam = EXAMPLE; state.isExample = true; curExamId = null;
       resetRun();
       persist(); renderAll();
+      if (view === "exam") go(examBack);
     }
   }
 
@@ -905,11 +969,28 @@
     renderLib();
   }
 
+  // 진행률 막대: "문항 7/10 작성 중"이면 70%, 그 밖의 단계는 대략적인 위치
+  function progressPct(r) {
+    if (r.status === "pending") return 3;
+    const m = String(r.progress || "").match(/(\d+)\s*\/\s*(\d+)/);
+    if (m) return Math.min(92, 8 + (84 * +m[1]) / Math.max(1, +m[2]));
+    if (/그림/.test(r.progress || "")) return 95;
+    return 6;
+  }
+  // 과목마다 같은 색 띠
+  const CARD_COLORS = ["var(--omr)", "#6b8cff", "#e0a33a", "#4fb68a", "#a46be0", "#3fb0c4"];
+  function subjectColor(s) {
+    let h = 0;
+    for (const c of String(s || "")) h = (h * 131 + c.charCodeAt(0)) % 1000003;
+    return CARD_COLORS[Math.abs(h) % CARD_COLORS.length];
+  }
+  const shortDate = (iso) => { try { return new Date(iso).toLocaleDateString("ko-KR", { month: "long", day: "numeric" }); } catch (e) { return ""; } };
+
   function renderLib() {
     // 완료된 요청은 "내 시험지"에 나오므로 요청 목록에서는 진행 중·실패만 보여줌
     const visible = requests.filter((r) => r.status !== "done").slice(0, 10);
     $("reqHead").hidden = !visible.length;
-    $("tipLine").hidden =!visible.some((r) => r.status === "pending" || r.status === "working");
+    $("tipLine").hidden = !visible.some((r) => r.status === "pending" || r.status === "working");
     $("reqList").replaceChildren(...visible.map((r) => {
       const base = r.subject || (Array.isArray(r.files) ? r.files.join(", ") : "요청");
       const name = r.regen_exam != null ? `${r.regen_idx + 1}번 문제 다시 · ${base}` : base;
@@ -917,25 +998,55 @@
       const action = live
         ? confirmButton("취소", "정말 취소?", () => deleteRequest(r, "요청을 취소했어요."))
         : confirmButton("지우기", "정말 지울까요?", () => deleteRequest(r, "요청을 지웠어요."));
-      return el("li", null,
-        el("span", { class: "t", title: name, text: (r.retry_of ? "↻ " : "") + name }),
+      return el("li", { class: "run " + (r.status || "pending") },
+        el("div", { class: "run-main" },
+          el("span", { class: "t", title: name, text: (r.retry_of ? "↻ " : "") + name }),
+          el("span", { class: "s", text: when(r.created_at) + (r.status === "error" && r.error ? " · " + r.error : "") })),
         el("span", { class: "pill " + (r.status || "pending"), text: (r.status === "working" && r.progress) || STATUS[r.status] || "대기 중" }),
-        el("span", { class: "s row" },
-          el("span", { text: when(r.created_at) + (r.status === "error" && r.error ? " · " + r.error : "") }),
-          el("span", { class: "acts" }, r.status === "error" && r.reusable && r.regen_exam == null ? retryButton(r, "다시 시도") : null, action)));
+        el("span", { class: "acts" }, r.status === "error" && r.reusable && r.regen_exam == null ? retryButton(r, "다시 시도") : null, action),
+        live ? el("div", { class: "bar" + (r.status === "pending" ? " wait" : "") }, el("i", { style: `width:${progressPct(r)}%` })) : null);
     }));
-    const noteItem = renderNoteItem();
-    $("examList").replaceChildren(...(noteItem ? [noteItem] : []), ...(exams.length ? exams.map((x) => {
+
+    $("examHead").textContent = exams.length ? `내 시험지 · ${exams.length}` : "내 시험지";
+    const cards = exams.map((x) => {
       const req = ownRequest(x.id);
-      return el("li", { class: x.id === curExamId ? "cur" : "" },
-        el("span", { class: "t", title: x.title, text: x.title || "시험지" }),
-        el("button", { type: "button", class: "open", text: x.id === curExamId ? "보는 중" : "풀기", onclick: () => openExam(x.id) }),
-        el("span", { class: "s row" },
-          el("span", { text: `${(x.questions || []).length}문항 · ${when(x.created_at)}` }),
-          el("span", { class: "acts" },
-            req?.reusable ? retryButton(req, "새 문제로 다시") : null,
-            req ? confirmButton("삭제", "정말 삭제?", () => deleteExam(x)) : confirmButton("목록에서 빼기", "정말 뺄까요?", () => deleteExam(x)))));
-    }) : noteItem ? [] : [el("li", null, el("span", { class: "s", text: sb ? "아직 시험지가 없어요. 출제를 요청하거나 친구가 보낸 링크를 열면 여기에 쌓입니다." : "사이트 설정 후 이용할 수 있어요." }))]));
+      const cur = x.id === curExamId;
+      return el("li", { class: "ex" + (cur ? " cur" : ""), style: `--c:${subjectColor(x.subject || x.title)}` },
+        el("button", { type: "button", class: "ex-open", onclick: () => openExam(x.id), "aria-label": (x.title || "시험지") + " 풀기" },
+          el("span", { class: "sub", text: [x.subject, shortDate(x.created_at)].filter(Boolean).join(" · ") || "시험지" }),
+          el("span", { class: "ex-t", text: x.title || "시험지" }),
+          el("span", { class: "meta" },
+            el("span", { text: `${(x.questions || []).length}문항` + (req ? "" : " · 받은 시험지") }),
+            el("span", { class: "go-tag", text: cur ? "보는 중" : "풀기 →" }))),
+        el("span", { class: "acts" },
+          req?.reusable ? retryButton(req, "새 문제로 다시") : null,
+          req ? confirmButton("삭제", "정말 삭제?", () => deleteExam(x)) : confirmButton("목록에서 빼기", "정말 뺄까요?", () => deleteExam(x))));
+    });
+    if (!exams.length) {
+      cards.push(el("li", { class: "empty-note", text: sb ? "아직 시험지가 없어요. '출제하기'에서 요청하거나 친구가 보낸 링크를 열면 여기에 쌓여요." : "사이트 설정 후 이용할 수 있어요." }));
+      cards.push(el("li", { class: "ex example" + (state.isExample && view === "exam" ? " cur" : ""), style: "--c:var(--line)" },
+        el("button", { type: "button", class: "ex-open", onclick: openExample },
+          el("span", { class: "sub", text: "예시 · " + EXAMPLE.subject }),
+          el("span", { class: "ex-t", text: EXAMPLE.title }),
+          el("span", { class: "meta" }, el("span", { text: `${EXAMPLE.questions.length}문항` }), el("span", { class: "go-tag", text: "둘러보기 →" })))));
+    }
+    $("examList").replaceChildren(...cards);
+    renderNotePage();
+    renderBadges();
+    renderFlow();
+  }
+
+  function renderBadges() {
+    const live = requests.filter((r) => r.status === "pending" || r.status === "working").length;
+    const b = $("cntBook");
+    b.hidden = !(live || unseen);
+    b.textContent = String(live + unseen);
+    b.title = live ? `만드는 중 ${live}` : `새 시험지 ${unseen}`;
+    const due = loadWrongs().filter(isDue).length;
+    const w = $("cntWrong");
+    w.hidden = !due;
+    w.textContent = String(due);
+    w.title = `오늘 복습 ${due}문항`;
   }
 
   /* ---------- 시험지 데이터 정리 ---------- */
@@ -1075,41 +1186,78 @@
     state.isExample = false; curExamId = NOTE_ID;
     resetRun();
     persist(); renderAll(); renderLib();
-    $("sheet").scrollIntoView({ behavior: "smooth", block: "start" });
+    examBack = "wrong";
+    go("exam");
     return true;
   }
 
-  function renderNoteItem() {
+  // 오답노트 화면: 오늘 복습·전체·다음 복습, 오답 모의고사, 과목 고르기, 문제 목록
+  function renderNotePage() {
+    const box = $("notePage");
     const wrongs = loadWrongs();
-    if (!wrongs.length) return null;
+    if (!wrongs.length) {
+      box.replaceChildren(el("div", { class: "note-empty" },
+        el("b", { text: "아직 틀린 문제가 없어요" }),
+        el("p", { text: "시험지를 풀고 채점하면 틀린 문제가 여기에 모여요. 단답형·서술형은 '맞음·틀림'을 누르면 들어와요." }),
+        el("a", { class: "btn", href: "#book", text: "문제집으로" })));
+      return;
+    }
     const subjects = [...new Set(wrongs.map(subjectOf))];
     if (noteFilter.subject && !subjects.includes(noteFilter.subject)) noteFilter.subject = "";
     const pool = wrongs.filter((w) => !noteFilter.subject || subjectOf(w) === noteFilter.subject);
     const due = pool.filter(isDue).length;
     const nextDue = pool.filter((w) => !isDue(w)).map((w) => w.due).sort((a, b) => a - b)[0];
-    const viewing = curExamId === NOTE_ID;
-    const sub = due ? `오늘 복습 ${due}문항 · 맞히면 1일·3일 뒤 다시, 3번 맞히면 졸업`
-      : nextDue ? `오늘 복습 끝! 다음 복습 ${new Date(nextDue).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}` : "";
-    const picker = subjects.length > 1 ? el("select", { class: "note-subject", "aria-label": "과목 고르기",
-      onchange: (e) => { noteFilter.subject = e.target.value; renderLib(); } },
-      el("option", { value: "", text: `전체 과목 (${wrongs.length})` }),
-      ...subjects.map((s) => { const o = el("option", { value: s, text: `${s} (${wrongs.filter((w) => subjectOf(w) === s).length})` }); o.selected = s === noteFilter.subject; return o; })) : null;
-    return el("li", { class: "note-item" + (viewing ? " cur" : "") },
-      el("span", { class: "t", text: `오답노트 · ${pool.length}문항` }),
-      el("button", { type: "button", class: "open", text: due ? `오늘 복습 ${due}` : "전체 풀기", onclick: () => openWrongNote({ due: !!due, mock: 0 }) }),
-      picker ? el("span", { class: "s" }, picker) : null,
-      el("span", { class: "s row" },
-        el("span", { text: sub }),
-        el("span", { class: "acts" },
-          due ? el("button", { type: "button", class: "link retry", text: "전체 풀기", onclick: () => openWrongNote({ due: false, mock: 0 }) }) : null,
-          pool.length >= 3 ? el("button", { type: "button", class: "link retry", title: "오답노트에서 무작위로 뽑고 선지 순서도 섞어요",
-            text: `🎲 모의고사 ${Math.min(MOCK_SIZE, pool.length)}문제`, onclick: () => openWrongNote({ mock: MOCK_SIZE }) }) : null,
-          confirmButton("비우기", noteFilter.subject ? "이 과목 비울까요?" : "정말 비울까요?", () => {
-            saveWrongs(noteFilter.subject ? wrongs.filter((w) => subjectOf(w) !== noteFilter.subject) : []);
-            if (viewing) { state.exam = EXAMPLE; state.isExample = true; curExamId = null; resetRun(); persist(); renderAll(); }
-            setStatus("오답노트를 비웠어요.");
-            renderLib();
-          }))));
+    const day = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}`; };
+
+    const stats = el("div", { class: "stats" },
+      el("div", { class: "stat" + (due ? " hot" : "") }, el("b", { text: String(due) }), el("span", { text: "오늘 복습할 문제" })),
+      el("div", { class: "stat" }, el("b", { text: String(pool.length) }), el("span", { text: noteFilter.subject ? noteFilter.subject + " 전체" : "오답노트 전체" })),
+      el("div", { class: "stat" }, el("b", { text: nextDue ? day(nextDue) : "–" }), el("span", { text: "다음 복습" })));
+
+    const actions = el("div", { class: "note-acts" },
+      el("button", { type: "button", class: "btn primary", text: due ? `오늘 복습 ${due}문항 풀기` : "전체 풀기", onclick: () => openWrongNote({ due: !!due, mock: 0 }) }),
+      due ? el("button", { type: "button", class: "btn", text: `전체 ${pool.length}문항 풀기`, onclick: () => openWrongNote({ due: false, mock: 0 }) }) : null,
+      el("span", { class: "spacer" }),
+      confirmButton(noteFilter.subject ? "이 과목 비우기" : "오답노트 비우기", noteFilter.subject ? "이 과목 비울까요?" : "정말 비울까요?", () => {
+        saveWrongs(noteFilter.subject ? wrongs.filter((w) => subjectOf(w) !== noteFilter.subject) : []);
+        if (curExamId === NOTE_ID) { state.exam = EXAMPLE; state.isExample = true; curExamId = null; resetRun(); persist(); renderAll(); }
+        setStatus("오답노트를 비웠어요.");
+        renderLib();
+      }));
+
+    const mock = pool.length >= 3 ? el("div", { class: "mock" },
+      el("div", null, el("b", { text: "🎲 오답 모의고사" }),
+        el("p", { text: `오답노트에서 ${Math.min(MOCK_SIZE, pool.length)}문항을 무작위로 뽑아 시험지로 풀어요. 객관식은 보기 순서도 섞여요.` })),
+      el("button", { type: "button", class: "btn primary", text: `${Math.min(MOCK_SIZE, pool.length)}문항으로 풀기`, onclick: () => openWrongNote({ mock: MOCK_SIZE }) })) : null;
+
+    const chips = subjects.length > 1 ? el("div", { class: "seg note-chips", role: "radiogroup", "aria-label": "과목 고르기" },
+      ...["", ...subjects].map((s) => {
+        const n = s ? wrongs.filter((w) => subjectOf(w) === s).length : wrongs.length;
+        const inp = el("input", { type: "radio", name: "noteSubject", value: s });
+        inp.checked = s === noteFilter.subject;
+        inp.addEventListener("change", () => { noteFilter.subject = s; renderLib(); });
+        return el("label", null, inp, el("span", { text: `${s || "전체"} ${n}` }));
+      })) : null;
+
+    // 복습할 날이 된 것부터
+    const list = pool.slice().sort((a, b) => (isDue(b) - isDue(a)) || (a.due || 0) - (b.due || 0)).slice(0, 60);
+    const ansText = (q) => q.type === "mc" ? (q.answer ? `${MARKS[q.answer - 1]} ${(q.choices || [])[q.answer - 1] || ""}` : "–") : String(q.answer || "–");
+    const items = el("ul", { class: "wrongs" }, ...list.map((w) => {
+      const q = w.q || {};
+      return el("li", { class: "wn" },
+        el("p", { class: "q-t", text: String(q.question || "").slice(0, 220) }),
+        el("div", { class: "tags" },
+          isDue(w) ? el("span", { class: "tag due", text: "오늘 복습" }) : el("span", { class: "tag soon", text: `${day(w.due)} 복습` }),
+          w.stage ? el("span", { class: "tag", text: `${w.stage}/${GRADUATE} 맞힘` }) : null,
+          el("span", { class: "tag", text: subjectOf(w) }),
+          q.type ? el("span", { class: "tag", text: TYPE_LABEL[q.type] || q.type }) : null,
+          w.count > 1 ? el("span", { class: "tag", text: `${w.count}번 틀림` }) : null),
+        el("p", { class: "ans", text: "정답 " + ansText(q).slice(0, 160) }),
+        w.from ? el("p", { class: "from", text: "출처 · " + w.from }) : null);
+    }));
+    box.replaceChildren(stats, actions, ...(mock ? [mock] : []), ...(chips ? [el("p", { class: "section-t", text: "과목" }), chips] : []),
+      el("p", { class: "section-t", text: `문제 ${pool.length}` + (pool.length > list.length ? ` · 앞의 ${list.length}개만 보여요` : "") }), items);
+    renderMath(items);
   }
 
   /* ---------- 채점 ---------- */
@@ -1478,7 +1626,7 @@
         const label = state.graded || state.self[i] != null
           ? (state.self[i] === true ? "맞음" : state.self[i] === false ? "틀림" : "자가채점 필요")
           : (typeof a === "string" && a.trim() ? "작성함" : TYPE_LABEL[q.type]);
-        body = el("button", { type: "button", class: "link omr-note", onclick: () => $("q" + i).scrollIntoView({ behavior: "smooth", block: "center" }), text: label });
+        body = el("button", { type: "button", class: "link omr-note", onclick: () => { setOmrOpen(false); $("q" + i).scrollIntoView({ behavior: "smooth", block: "center" }); }, text: label });
       }
       return el("div", { class: cls }, el("span", { class: "n", text: String(i + 1) }), body);
     }));
@@ -1591,8 +1739,14 @@
   $("supportClose").addEventListener("click", () => $("supportDlg").close());
   $("supportDlg").addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
   $("printKey").addEventListener("click", () => printSheet(true));
-  $("mGrade").addEventListener("click", () => $("grade").click());
-  $("mOmr").addEventListener("click", () => document.querySelector(".omr").scrollIntoView({ behavior: "smooth", block: "start" }));
+  $("mGrade").addEventListener("click", () => { setOmrOpen(false); $("grade").click(); });
+  // 좁은 화면: 답안지는 아래에서 올라오는 시트
+  function setOmrOpen(on) {
+    document.body.classList.toggle("omr-open", on);
+    $("mOmr").textContent = on ? "답안지 닫기" : "답안지";
+    $("mOmr").setAttribute("aria-expanded", on ? "true" : "false");
+  }
+  $("mOmr").addEventListener("click", () => setOmrOpen(!document.body.classList.contains("omr-open")));
   $("showAll").addEventListener("click", () => {
     if (!state.exam) return;
     const allOpen = state.exam.questions.every((_, i) => state.open[i]);
@@ -1616,13 +1770,56 @@
   });
   window.addEventListener("pagehide", () => { if (syncTimer) pushSync(); });
 
+  /* ---------- 화면 (출제하기 / 문제집 / 시험지 / 오답노트) ----------
+     주소의 #make #book #exam #wrong 으로 화면을 바꿔서 뒤로 가기가 그대로 동작 */
+  const VIEWS = ["make", "book", "exam", "wrong"];
+  function show(name) {
+    view = name;
+    document.body.dataset.view = name;
+    document.querySelectorAll(".view").forEach((v) => { v.hidden = v.dataset.view !== name; });
+    const tab = name === "exam" ? examBack : name;
+    document.querySelectorAll(".tab").forEach((t) => {
+      if (t.dataset.tab === tab) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
+    });
+    if (name === "exam") {
+      $("backBtn").href = "#" + examBack;
+      $("backBtn").textContent = examBack === "wrong" ? "← 오답노트" : "← 문제집";
+    } else setOmrOpen(false);
+    if (name === "book" && unseen) { unseen = 0; renderBadges(); renderFlow(); }
+    if (name === "make" || name === "book") renderLib();
+    if (name === "make") renderFiles(); // 다른 화면에서 남긴 지난 안내 대신 지금 자료 상태를 보여 줌
+    $("toast").hidden = true;
+    window.scrollTo(0, 0);
+  }
+  function go(name) {
+    if (location.hash.slice(1) !== name) location.hash = name; // hashchange 가 show 를 부름
+    else show(name);
+  }
+  window.addEventListener("hashchange", () => {
+    const h = location.hash.slice(1);
+    if (VIEWS.includes(h)) show(h);
+  });
+
+  // 출제 조건: 바꿀 때마다 보내기 카드 요약을 고침. '자세히'는 펼친 상태를 기억
+  $("condStep").addEventListener("change", renderSend);
+  $("condStep").addEventListener("input", renderSend);
+  const more = $("more");
+  more.open = load("gichul.more", false) === true;
+  more.addEventListener("toggle", () => { try { localStorage.setItem("gichul.more", JSON.stringify(more.open)); } catch (e) {} });
+
   /* ---------- 시작 ---------- */
   if (!restore()) { state.exam = EXAMPLE; state.isExample = true; }
+  if (curExamId === NOTE_ID) examBack = "wrong";
   renderAll();
   if (state.timer) ensureTick(); // 시험 모드 중에 새로고침했으면 이어서 (시간이 지났으면 바로 채점)
   renderFiles();
   restoreLibrary(); // 이 기기 자료함에 보관한 자료 불러오기
   renderLib();
   initAuth();
+  {
+    // 처음 화면: 주소에 정해져 있으면 그 화면, 시험 모드 중이었으면 시험지, 아니면 출제하기
+    const h = location.hash.slice(1);
+    show(VIEWS.includes(h) ? h : state.timer ? "exam" : "make");
+  }
   refresh().then(openFromLink);
 })();

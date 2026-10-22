@@ -2,22 +2,22 @@
 (function () {
   const KEY = "gichul.tour.done";
   const STEPS = [
-    { target: "#drop", title: "1. 공부자료 올리기",
-      body: "강의노트나 강의 슬라이드를 PDF·PPTX로 올리세요. 필기 노트나 교재 사진(JPG·PNG)도 돼요. 여러 개를 한 번에 올려도 되고, 회로도·그래프 같은 그림이나 스캔한 페이지도 읽어요." },
-    { target: ".panel .step:nth-of-type(2)", title: "2. 출제 조건 고르기",
-      body: "문항 수, 문제 유형, 난이도를 고르세요. 외국어 시험이면 어휘·문법·독해 영역과 문제 언어도 정할 수 있어요. 원하는 범위가 있으면 '추가 요청'에 적어 주세요." },
-    { target: "#go", title: "3. 출제 요청 보내기",
-      body: "보내면 보통 1~2분 안에 시험지가 완성돼요. 아래 문제집에서 '문항 4/10 작성 중'처럼 진행 상황을 볼 수 있고, 마음이 바뀌면 취소할 수 있어요." },
-    { target: "#sheet", title: "4. 시험지 풀기",
-      body: "완성된 시험지는 '내 시험지'에서 열어요. 문제마다 정답·해설을 볼 수 있고, 마음에 안 드는 문제는 '이 문제 다시'로 바꾸거나 '문제 신고'를 할 수 있어요. '⏱ 시험 모드'로 시간을 재며 풀고, '링크 복사'로 친구에게 보내 점수를 겨룰 수도 있어요." },
-    { target: ".omr", mobileTarget: ".mbar", title: "5. 답안지로 채점",
-      body: "OMR 칸을 눌러 답을 고르고 '채점하기'를 누르세요. 단답형·서술형은 모범답안과 비교해 맞음·틀림을 직접 표시하면 점수에 들어가요. 틀린 문제는 오답노트에 모여 1일·3일 뒤 다시 복습해요. '인쇄 · PDF 저장'으로 종이에 풀 수도 있어요." },
+    { view: "make", target: "#fileStep", title: "1. 공부자료 올리기",
+      body: "강의노트나 강의 슬라이드를 PDF·PPTX로 올리세요. 필기 노트나 교재 사진(JPG·PNG)도 돼요. 여러 개를 한 번에 올려도 되고, 회로도·그래프 같은 그림이나 스캔한 페이지도 읽어요. 올린 자료는 이 기기에 보관돼서 다음에 체크만 하면 다시 쓸 수 있어요." },
+    { view: "make", target: "#condStep", title: "2. 출제 조건 고르기",
+      body: "문항 수, 문제 유형, 난이도를 고르세요. 난이도는 여러 개 고르면 섞어서 나와요. 과목명, 외국어 영역, 문제 언어, 그림, 추가 요청은 '자세히'를 펼치면 있어요." },
+    { view: "make", target: "#go", title: "3. 출제 요청 보내기",
+      body: "이 버튼을 눌러야 시험지를 만들기 시작해요. 보내면 문제집으로 넘어가서 '문항 4/10 작성 중'처럼 진행 상황이 보이고, 보통 1~2분 뒤 시험지가 올라와요. 마음이 바뀌면 취소할 수 있어요." },
+    { target: "#tabBook", title: "4. 문제집에서 풀기",
+      body: "완성된 시험지는 문제집에 쌓여요. 누르면 시험지가 열리고, OMR 답안지로 답을 고른 뒤 '채점하기'를 누르면 돼요. 문제마다 정답·해설, '이 문제 다시', '문제 신고'가 있고, '⏱ 시험 모드'와 '링크 복사'로 친구와 점수를 겨룰 수도 있어요." },
+    { target: "#tabWrong", title: "5. 오답노트로 복습",
+      body: "채점하면 틀린 문제가 오답노트에 모여요. 맞히면 1일·3일 뒤 다시 나오고, 3번 맞히면 졸업해요. 무작위로 뽑는 오답 모의고사도 풀 수 있어요." },
     { target: "#account", title: "6. 로그인 (선택)",
       body: "로그인 없이도 쓸 수 있어요. 구글로 로그인하면 내 시험지와 오답노트가 PC·휴대폰 어디서나 똑같이 보여요. '게스트로 시작'은 이 기기에서 바로 쓰다가, 나중에 구글 계정을 연결하면 기록이 그대로 옮겨져요." }
   ];
 
   let i = 0, hole, card, shield, onKey, onMove;
-  const narrow = () => window.matchMedia("(max-width: 820px)").matches;
+  const narrow = () => window.matchMedia("(max-width: 720px)").matches;
 
   function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; }
 
@@ -48,7 +48,10 @@
   }
 
   function show() {
-    const step = STEPS[i], t = targetOf(step);
+    const step = STEPS[i];
+    // 설명할 부분이 있는 화면으로 옮김 (#make 등, 화면 전환은 app.js 가 주소를 보고 함)
+    if (step.view && location.hash.slice(1) !== step.view) { location.hash = step.view; setTimeout(show, 40); return; }
+    const t = targetOf(step);
     card.replaceChildren(
       el("span", "tour-count", `${i + 1} / ${STEPS.length}`),
       el("h3", "tour-title", step.title),
