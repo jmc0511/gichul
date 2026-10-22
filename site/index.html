@@ -23,6 +23,10 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="기추리">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#cf3f63">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -56,6 +60,12 @@
 
 <main class="wrap">
   <!-- 출제하기 -->
+  <div class="install-bar" id="installBar" hidden>
+    <span class="install-ico" aria-hidden="true">📲</span>
+    <span class="install-text" id="installText">홈 화면에 설치하면 앱처럼 바로 열 수 있어요.</span>
+    <button class="btn primary" id="installBtn" type="button">설치</button>
+    <button class="install-x" id="installClose" type="button" aria-label="안내 닫기">×</button>
+  </div>
   <section class="view" id="view-make" data-view="make" aria-label="출제하기">
     <div class="page-head">
       <div><h2>내 자료로 예상 기출 뽑기</h2><p>자료를 올리고 조건을 고른 뒤 요청을 보내면, 1~2분 뒤 문제집에 시험지가 올라와요.</p></div>
@@ -207,6 +217,8 @@
   </section>
 
   <footer class="foot-links">
+    <a href="#" id="installLink" hidden>📲 앱으로 설치</a>
+    <span aria-hidden="true">·</span>
     <a href="privacy.html">개인정보처리방침</a>
     <span aria-hidden="true">·</span>
     <a href="mailto:beogo0511@naver.com">문의 beogo0511@naver.com</a>
@@ -242,5 +254,6 @@
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script src="tour.js"></script>
+<script src="install.js"></script>
 </body>
 </html>

@@ -306,7 +306,7 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .btn { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; font-weight: 600; color: var(--ink); }
 .btn:hover { border-color: var(--muted); }
 .btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.page-head .btn.primary, .note-acts .btn.primary, .mock .btn.primary, .note-empty .btn { background: var(--omr); border-color: var(--omr); color: #fff; }
+.install-bar .btn.primary, .page-head .btn.primary, .note-acts .btn.primary, .mock .btn.primary, .note-empty .btn { background: var(--omr); border-color: var(--omr); color: #fff; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* 시험지 화면 아래 채점 바 (좁은 화면) */
@@ -489,3 +489,11 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
   .sol { border-left: 2px solid #000; background: none; break-inside: avoid; }
   .fig-box { break-inside: avoid; }
 }
+
+/* 홈 화면 앱 설치 안내 */
+.install-bar { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; padding: 10px 12px 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--chip); font-size: 14px; }
+.install-ico { font-size: 18px; flex: none; }
+.install-text { flex: 1; min-width: 0; color: var(--ink); }
+.install-bar .btn { flex: none; padding: 6px 14px; }
+.install-x { flex: none; border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 4px 6px; }
+.install-x:hover { color: var(--ink); }
