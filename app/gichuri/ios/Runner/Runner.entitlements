@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 시험지 완성 알림(APNs). 보관함(Archive)으로 내보낼 때 Xcode 가 production 으로 바꿔 준다. -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
