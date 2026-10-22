@@ -745,11 +745,11 @@
 
   /* ---------- 실시간 알림 ---------- */
   // 처리기에게 "새 요청 있음"을 바로 알림 (실패해도 처리기가 주기적으로 확인함)
-  function notifyWorker() {
+  function notifyWorker(event = "new") {
     fetch(cfg.SUPABASE_URL.replace(/\/$/, "") + "/realtime/v1/api/broadcast", {
       method: "POST",
       headers: { apikey: cfg.SUPABASE_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: [{ topic: "queue", event: "new", payload: {} }] })
+      body: JSON.stringify({ messages: [{ topic: "queue", event, payload: {} }] })
     }).catch(() => {});
   }
 
@@ -1287,9 +1287,10 @@
         return;
       }
       markReported(t);
+      notifyWorker("report");
       const dropped = dropFromWrongs(q);
       delete state.reportOpen[i];
-      setStatus("신고했어요. 확인해서 고칠게요." + (dropped ? " 이 문제는 오답노트에서 뺐어요." : ""));
+      setStatus("신고했어요. 자료와 대조해서 1~2분 안에 고쳐 둘게요. 시험지를 다시 열면 고친 문제가 보여요." + (dropped ? " 이 문제는 오답노트에서 뺐어요." : ""));
       renderSheet();
     });
     return el("div", { class: "report" },

@@ -72,6 +72,46 @@ export async function earlierQuestions(retryOf) {
   return out;
 }
 
+/* ---------- 문제 신고 자동 처리 ---------- */
+/** 아직 손대지 않은 신고 (문제마다 묶기 전) */
+export async function openReports() {
+  return call("GET", "/reports?resolved_at=is.null&auto_status=is.null&select=exam_id,q_index&order=created_at.asc&limit=20");
+}
+
+/** 한 문제에 대한 열린 신고를 모두 '처리 중'으로 잡음. 다른 곳이 잡았으면 빈 배열 */
+export async function claimReports(examId, idx) {
+  return call("PATCH", `/reports?exam_id=eq.${examId}&q_index=eq.${idx}&resolved_at=is.null&auto_status=is.null`, { auto_status: "working", auto_at: new Date().toISOString() });
+}
+
+/** 시험지를 만든 원래 요청의 자료 (14일 지나면 material 이 비어 있음) */
+export async function examSource(examId) {
+  const [r] = await call("GET", `/requests?exam_id=eq.${examId}&regen_exam=is.null&select=instructions,material&limit=1`);
+  return r || null;
+}
+
+/** 문제 idx를 바꿈. 그 사이 다른 데서 바뀌었으면 false */
+export async function replaceQuestion(examId, idx, before, after) {
+  const qs = await examQuestions(examId);
+  if (!qs || JSON.stringify(qs[idx]) !== JSON.stringify(before)) return false;
+  qs[idx] = after;
+  await call("PATCH", `/exams?id=eq.${examId}`, { questions: qs });
+  return true;
+}
+
+/** 잡아 둔 신고들에 결과를 기록. resolve=true 면 관리자 '처리할 신고'에서 빠짐 */
+export async function closeReports(examId, idx, fields, resolve) {
+  const now = new Date().toISOString();
+  return call("PATCH", `/reports?exam_id=eq.${examId}&q_index=eq.${idx}&auto_status=eq.working`,
+    { ...fields, auto_at: now, ...(resolve ? { resolved_at: now } : {}) });
+}
+
+/** 처리기가 꺼지며 '처리 중'에 멈춘 신고를 다시 열기 */
+export async function resetStaleReports() {
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const rows = await call("PATCH", `/reports?auto_status=eq.working&auto_at=lt.${encodeURIComponent(cutoff)}`, { auto_status: null, auto_at: null });
+  return rows.length;
+}
+
 /* ---------- 요청에 딸린 그림 (Storage: request-images) ---------- */
 const BUCKET = "request-images";
 function storageHeaders(extra = {}) {
@@ -80,8 +120,8 @@ function storageHeaders(extra = {}) {
   return h;
 }
 
-export async function downloadImage(path) {
-  const res = await fetch(`${URL_}/storage/v1/object/${BUCKET}/${path}`, { headers: storageHeaders() });
+export async function downloadImage(path, bucket = BUCKET) {
+  const res = await fetch(`${URL_}/storage/v1/object/${bucket}/${path}`, { headers: storageHeaders() });
   if (!res.ok) throw new Error(`그림 받기 실패 ${res.status} ${await res.text()}`);
   return Buffer.from(await res.arrayBuffer());
 }

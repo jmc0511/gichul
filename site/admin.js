@@ -120,7 +120,41 @@
     return box;
   }
 
-  function render(s, reports) {
+  // NAS가 자동으로 처리한 신고 (고친 것은 되돌릴 수 있음)
+  const AUTO_LABEL = { fixed: ["고침", "done"], ok: ["문제없음", ""], stale: ["건너뜀", ""], undone: ["되돌림", "error"] };
+  const ansText = (q) => q.type === "mc" ? `${MARKS[(q.answer || 1) - 1] || "?"} ${(q.choices || [])[(q.answer || 1) - 1] || ""}` : String(q.answer ?? "");
+  function autoBox(autos) {
+    const box = el("section", { class: "box" }, el("h2", null, "신고 자동 처리", el("small", { text: "NAS가 자료와 대조해 처리 · 최근 30일" })));
+    if (!autos.length) { box.append(el("p", { class: "foot", text: "아직 자동 처리한 신고가 없어요." })); return box; }
+    for (const r of autos) {
+      const [label, cls] = AUTO_LABEL[r.auto_status] || [r.auto_status, ""];
+      const b = r.auto_before || {}, a = r.auto_after || {};
+      let undo = null;
+      if (r.auto_status === "fixed") {
+        undo = el("button", { type: "button", class: "btn", text: "원래 문제로 되돌리기" });
+        undo.addEventListener("click", async () => {
+          undo.disabled = true;
+          const { error } = await sb.rpc("admin_undo_autofix", { rid: r.id });
+          if (error) { undo.disabled = false; alert(/changed_since/.test(error.message) ? "그 뒤로 문제가 또 바뀌어서 되돌릴 수 없어요." : "되돌리지 못했어요: " + error.message); return; }
+          load();
+        });
+      }
+      box.append(el("div", { class: "report-card" },
+        el("div", { class: "rc-head" },
+          el("b", { text: `${r.title || "시험지"} · ${r.q_index + 1}번` }),
+          el("span", { class: "pill " + cls, text: label }),
+          el("span", { class: "foot", text: `신고 ${r.same_q}건 · ${r.reason} · ${when(r.auto_at)}` }),
+          el("a", { href: `./?exam=${r.exam_id}`, target: "_blank", rel: "noopener", text: "시험지 열기" })),
+        el("p", { class: "rc-a", text: r.auto_note || "–" }),
+        r.auto_status === "fixed" || r.auto_status === "undone" ? el("div", { class: "foot" },
+          el("div", { text: `전: ${String(b.question || "").slice(0, 140)} → 정답 ${ansText(b)}` }),
+          el("div", { text: `후: ${String(a.question || "").slice(0, 140)} → 정답 ${ansText(a)}` })) : null,
+        undo));
+    }
+    return box;
+  }
+
+  function render(s, reports, autos) {
     const t = s.today, u = s.usage;
     const storage = u.request_images.bytes + u.exam_figures.bytes;
     const days = s.days.map((d) => ({ ...d, day: String(d.day) }));
@@ -151,6 +185,7 @@
           el("h2", null, "오늘 많이 쓴 사람", el("small", { text: "IP 일부 가림" })),
           (s.top_ips || []).length ? tableOf(["IP", "요청"], s.top_ips.map((r) => el("tr", null, el("td", { class: "num", text: r.ip }), el("td", { class: "num", text: String(r.n) })))) : el("p", { class: "foot", text: "오늘 요청 없음" }))),
       reportsBox(reports || []),
+      autoBox(autos || []),
       el("section", { class: "box" }, el("h2", null, "최근 실패", el("small", { text: "최근 15개" })),
         failures.length ? tableOf(["시각", "과목 / 파일", "원인"], failures.map((f) => el("tr", null,
           el("td", { class: "num", text: when(f.created_at) }),
@@ -177,8 +212,8 @@
       message(/not_admin/.test(error.message) ? `${session.user.email} 계정은 관리자로 등록돼 있지 않아요.` : "불러오지 못했어요: " + error.message);
       return;
     }
-    const rep = await sb.rpc("admin_reports");
-    render(data, rep.error ? [] : rep.data);
+    const [rep, auto] = await Promise.all([sb.rpc("admin_reports"), sb.rpc("admin_auto_reports")]);
+    render(data, rep.error ? [] : rep.data, auto.error ? [] : auto.data);
   }
 
   $("reload").addEventListener("click", load);
