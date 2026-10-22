@@ -410,6 +410,8 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .account { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .btn.google { display: inline-flex; align-items: center; gap: 6px; }
 .btn.google .g { font-family: var(--f-num); font-weight: 700; color: var(--omr); }
+.btn.apple { display: inline-flex; align-items: center; gap: 6px; }
+.btn.apple .g { font-family: -apple-system, system-ui, sans-serif; font-size: 15px; line-height: 1; }
 .account .who { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
 .account .dot.guest { background: var(--muted); }

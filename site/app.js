@@ -47,6 +47,19 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" }
   }) : null;
 
+  /* ---------- iOS 앱(Flutter 웹뷰) 연결 ----------
+     앱은 User-Agent 끝에 GichuriApp 을 붙이고, 웹뷰가 못 하는 일(구글·애플 로그인 창, 인쇄, 공유)을 대신 해 줌.
+     앱 쪽 핸들러: oauth(url) → 돌아온 주소, print(), share({text, filename} | {url, title}) */
+  const inApp = /GichuriApp/.test(navigator.userAgent);
+  const APP_REDIRECT = "gichuri://auth";
+  function native(name, ...args) {
+    return new Promise((resolve) => {
+      const call = () => window.flutter_inappwebview.callHandler(name, ...args).then(resolve, () => resolve(null));
+      if (window.flutter_inappwebview?.callHandler) call();
+      else window.addEventListener("flutterInAppWebViewPlatformReady", call, { once: true });
+    });
+  }
+
   let exams = [], requests = [], curExamId = null, pollTimer = null;
   let view = "make", examBack = "book", unseen = 0;
 
@@ -102,17 +115,38 @@
     const { error } = await sb.auth.signInAnonymously();
     if (error) setStatus("게스트로 시작하지 못했어요. 잠시 후 다시 시도해 주세요.", true);
   }
-  async function signInGoogle() {
+  const PROVIDER_NAME = { google: "구글", apple: "애플" };
+  async function signInWith(provider) {
     await pushSync();
-    // 게스트라면 지금 계정에 구글을 연결해 데이터를 그대로 이어감
+    // 앱에서는 로그인 페이지를 앱이 띄우고(웹뷰 안 구글 로그인은 구글이 막음) 돌아온 코드로 세션을 만듦
+    const options = inApp ? { redirectTo: APP_REDIRECT, skipBrowserRedirect: true } : { redirectTo: redirectTo() };
+    let res = null;
+    // 게스트라면 지금 계정에 연결해 데이터를 그대로 이어감
     if (user?.is_anonymous) {
-      const { error } = await sb.auth.linkIdentity({ provider: "google", options: { redirectTo: redirectTo() } });
-      if (!error) return;
-      // 이미 다른 계정에 연결된 구글이면 그 계정으로 로그인 (이 기기 데이터는 합쳐짐)
+      res = await sb.auth.linkIdentity({ provider, options });
+      // 실패하면 그 계정으로 로그인 (이 기기 데이터는 합쳐짐)
+      if (res.error) res = null;
     }
-    const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: redirectTo() } });
-    if (error) setStatus("구글 로그인을 시작하지 못했어요.", true);
+    if (!res) res = await sb.auth.signInWithOAuth({ provider, options });
+    if (res.error) { setStatus(`${PROVIDER_NAME[provider]} 로그인을 시작하지 못했어요.`, true); return; }
+    if (!inApp) return; // 웹은 로그인 페이지로 넘어갔다가 돌아옴
+    const back = await native("oauth", res.data.url);
+    if (!back) return; // 사용자가 닫음
+    const q = new URLSearchParams(String(back).split(/[?#]/).slice(1).join("&"));
+    const err = q.get("error_description");
+    if (err) {
+      setStatus(/already/i.test(err) ? `이 ${PROVIDER_NAME[provider]} 계정은 이미 다른 계정에 연결돼 있어요. 로그아웃 뒤 다시 로그인해 주세요.` : "로그인하지 못했어요: " + err, true);
+      return;
+    }
+    const code = q.get("code");
+    if (code) {
+      const { error } = await sb.auth.exchangeCodeForSession(code);
+      if (error) setStatus("로그인하지 못했어요: " + error.message, true);
+    }
   }
+  const signInGoogle = () => signInWith("google");
+  // 앱 스토어 규정: 구글 로그인이 있는 앱은 애플 로그인도 있어야 해서, 앱 안에서만 보여 줌
+  const appleBtn = (label) => inApp ? el("button", { type: "button", class: "btn apple", onclick: () => signInWith("apple") }, el("span", { class: "g", text: "" }), label) : null;
   async function signOut() {
     await pushSync();
     await sb.auth.signOut();
@@ -132,7 +166,8 @@
     if (!user) {
       box.replaceChildren(
         el("button", { type: "button", class: "btn", text: "게스트로 시작", onclick: signInGuest, title: "이 기기에서 바로 시작해요. 나중에 구글 계정을 연결할 수 있어요." }),
-        el("button", { type: "button", class: "btn google", onclick: signInGoogle }, el("span", { class: "g", text: "G" }), el("span", { class: "long", text: "구글로 " }), "로그인"));
+        el("button", { type: "button", class: "btn google", onclick: signInGoogle }, el("span", { class: "g", text: "G" }), el("span", { class: "long", text: "구글로 " }), "로그인"),
+        ...[appleBtn("로그인")].filter(Boolean));
       return;
     }
     const name = user.is_anonymous ? "게스트" : (user.user_metadata?.name || user.email || "내 계정");
@@ -140,6 +175,7 @@
       el("span", { class: "who", title: user.is_anonymous ? "이 기기에서만 이어서 쓸 수 있어요. 구글 계정을 연결하면 다른 기기에서도 볼 수 있어요." : user.email || "" },
         el("span", { class: "dot" + (user.is_anonymous ? " guest" : "") }), name),
       user.is_anonymous ? el("button", { type: "button", class: "btn google", onclick: signInGoogle }, el("span", { class: "g", text: "G" }), el("span", { class: "long", text: "구글 계정 " }), "연결") : null,
+      user.is_anonymous ? appleBtn("연결") : null,
       // 게스트는 로그아웃하면 다시 들어올 방법이 없어서 한 번 더 확인
       user.is_anonymous
         ? confirmButton("로그아웃", "기록이 사라져요. 정말?", signOut)
@@ -200,6 +236,7 @@
   }
   async function copyLink() {
     const url = examLink(curExamId);
+    if (inApp) { await native("share", { url, title: state.exam?.title || "기추리 시험지" }); return; }
     try { await navigator.clipboard.writeText(url); setStatus("시험지 링크를 복사했어요. 받은 사람은 이 링크로만 열 수 있어요."); }
     catch (e) { setStatus("복사하지 못했어요. 이 주소를 직접 복사하세요: " + url); }
   }
@@ -1544,15 +1581,17 @@
       new Promise((r) => setTimeout(r, 3000))
     ]);
     document.title = (state.exam.title || "기추리 시험지") + (withKey ? " (정답 포함)" : "");
+    if (inApp) { await native("print"); afterPrint(); return; } // 앱은 iOS 인쇄 창(PDF 저장 포함)을 띄움
     window.print();
   }
-  window.addEventListener("afterprint", () => {
+  function afterPrint() {
     if (state.printKey == null) return;
     state.printKey = null;
     document.body.classList.remove("print-key");
     document.title = BASE_TITLE;
     renderSheet();
-  });
+  }
+  window.addEventListener("afterprint", afterPrint);
 
   // 문제 그림: 쪽 이미지에서 crop 영역만 잘라 보여줌
   function figureEl(fig, i) {
@@ -1758,6 +1797,7 @@
   $("save").addEventListener("click", () => {
     if (!state.exam) return;
     const name = (state.exam.title || "기출문제").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 80) + ".txt";
+    if (inApp) { native("share", { text: examText(), filename: name }); return; } // 앱은 공유 시트로 파일 저장
     const url = URL.createObjectURL(new Blob(["﻿" + examText()], { type: "text/plain;charset=utf-8" }));
     const a = el("a", { href: url, download: name });
     document.body.append(a); a.click(); a.remove();
