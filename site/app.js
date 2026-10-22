@@ -681,7 +681,9 @@
       state.busy = false;
       renderFiles();
       const code = Object.keys(LIMIT_MSG).find((k) => String(e?.message || "").includes(k));
-      setStatus(code ? LIMIT_MSG[code] : "요청을 보내지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.", true);
+      console.error(e);
+      const why = String(e?.message || e || "").slice(0, 80);
+      setStatus(code ? LIMIT_MSG[code] : "요청을 보내지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요." + (why ? ` (오류: ${why})` : ""), true);
       loadQuota();
     }
   }
