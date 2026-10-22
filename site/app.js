@@ -1804,7 +1804,7 @@
   $("condStep").addEventListener("change", renderSend);
   $("condStep").addEventListener("input", renderSend);
   const more = $("more");
-  more.open = load("gichul.more", false) === true;
+  more.open = load("gichul.more", true) !== false; // 기본은 펼침, 접어 두면 기억
   more.addEventListener("toggle", () => { try { localStorage.setItem("gichul.more", JSON.stringify(more.open)); } catch (e) {} });
 
   /* ---------- 시작 ---------- */
