@@ -146,7 +146,7 @@
   }
   const signInGoogle = () => signInWith("google");
   // 앱 스토어 규정: 구글 로그인이 있는 앱은 애플 로그인도 있어야 해서, 앱 안에서만 보여 줌
-  const appleBtn = (label) => inApp ? el("button", { type: "button", class: "btn apple", onclick: () => signInWith("apple") }, el("span", { class: "g", text: "" }), label) : null;
+  const appleBtn = (label) => inApp ? el("button", { type: "button", class: "btn apple", onclick: () => signInWith("apple") }, el("span", { class: "g", "aria-hidden": "true" }), label) : null;
   async function signOut() {
     await pushSync();
     await sb.auth.signOut();
