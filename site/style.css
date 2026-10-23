@@ -506,3 +506,8 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
              margin-inline: -20px; padding-inline: 20px; }
   .samples > .ex { scroll-snap-align: start; }
 }
+.trust { display: flex; align-items: flex-start; gap: 8px; margin: -14px 0 24px;
+         font-size: 13px; color: var(--muted); line-height: 1.6; }
+.trust svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--ok, var(--omr)); }
+.trust b { font-weight: 600; color: var(--ink); }
+.trust a { margin-left: 8px; color: var(--muted); }
