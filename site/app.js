@@ -134,8 +134,11 @@
 
   const redirectTo = () => location.origin + location.pathname;
   async function signInGuest() {
-    const { error } = await sb.auth.signInAnonymously();
-    if (error) setStatus("게스트로 시작하지 못했어요. 잠시 후 다시 시도해 주세요.", true);
+    const { data, error } = await sb.auth.signInAnonymously();
+    if (error) { setStatus("게스트로 시작하지 못했어요. 잠시 후 다시 시도해 주세요.", true); return null; }
+    // onAuthStateChange 를 기다리지 않고 바로 반영 (요청 보내는 길목에서 쓰므로)
+    user = data?.user || user;
+    return user;
   }
   const PROVIDER_NAME = { google: "구글", apple: "애플" };
   async function signInWith(provider) {
@@ -186,8 +189,9 @@
     const box = $("account");
     if (!box || !sb) return;
     if (!user) {
+      // 게스트가 기본값이라 "게스트로 시작" 버튼은 두지 않는다.
+      // 요청을 보낼 때 알아서 게스트로 시작하고(submitRequest), 여기서는 로그인만 권한다.
       box.replaceChildren(
-        el("button", { type: "button", class: "btn", text: "게스트로 시작", onclick: signInGuest, title: "이 기기에서 바로 시작해요. 나중에 구글 계정을 연결할 수 있어요." }),
         el("button", { type: "button", class: "btn google", onclick: signInGoogle }, el("span", { class: "g", text: "G" }), el("span", { class: "long", text: "구글로 " }), "로그인"),
         ...[appleBtn("로그인")].filter(Boolean));
       return;
@@ -219,7 +223,7 @@
           await pullSync();
           await refresh();
           if (event === "SIGNED_IN" && !user.is_anonymous) setStatus("로그인했어요. 내 시험지와 오답노트가 이 계정에 저장돼요.");
-          if (event === "SIGNED_IN" && user.is_anonymous) setStatus("게스트로 시작했어요. 구글 계정을 연결하면 다른 기기에서도 볼 수 있어요.");
+          // 게스트 전환은 요청을 보내는 길에 조용히 일어나므로 알리지 않는다 (진행 상황 문구를 덮어쓰지 않게)
         }, 0);
       }
     });
@@ -637,13 +641,15 @@
   let quota = null;
   const LIMIT_MSG = {
     limit_open: "진행 중인 요청이 끝나면 다시 보낼 수 있어요.",
+    limit_guest: "로그인 없이 보낼 수 있는 만큼 다 썼어요. 구글 계정으로 로그인하면 오늘 더 보낼 수 있고, 시험지와 오답노트도 다른 기기에서 이어서 볼 수 있어요.",
     limit_daily: "오늘 보낼 수 있는 요청을 다 썼어요. 밤 12시가 지나면 다시 보낼 수 있어요.",
     limit_site: "오늘은 사이트 전체 요청이 마감됐어요. 밤 12시가 지나면 다시 열려요."
   };
   function quotaBlock() {
     if (!quota || quota.unlimited) return null;
     if (quota.site_full) return LIMIT_MSG.limit_site;
-    if (quota.used >= quota.limit) return LIMIT_MSG.limit_daily;
+    if (quota.used >= quota.limit) return quota.guest ? LIMIT_MSG.limit_guest : LIMIT_MSG.limit_daily;
+    if (quota.ip_limit != null && quota.ip_used >= quota.ip_limit) return LIMIT_MSG.limit_daily;
     if (quota.open >= quota.open_limit) return LIMIT_MSG.limit_open;
     return null;
   }
@@ -654,8 +660,10 @@
     quota = data;
     const q = $("quota");
     q.hidden = false;
+    const left = Math.max(0, quota.limit - quota.used);
     q.textContent = quota.unlimited ? "관리자 · 요청 횟수 제한 없음"
-      : `오늘 남은 요청 ${Math.max(0, quota.limit - quota.used)}/${quota.limit} · 매일 0시 초기화`;
+      : quota.guest ? `로그인 없이 오늘 ${left}/${quota.limit}번 남았어요 · 로그인하면 더 보낼 수 있어요`
+      : `오늘 남은 요청 ${left}/${quota.limit} · 매일 0시 초기화`;
     q.classList.toggle("out", !!quotaBlock());
     renderFiles();
   }
@@ -751,6 +759,8 @@
     const material = buildMaterial(picked);
     const hasText = activeFiles().some((f) => f.pages.some((p) => p.trim()));
     if (!hasText && !picked.length) { setStatus("자료에서 글자도 그림도 찾지 못했어요. 다른 파일로 시도해 주세요.", true); return; }
+    // 로그인하지 않았으면 여기서 조용히 게스트로 시작한다 (처음 온 사람도 버튼 고르지 않고 바로 쓰게)
+    if (!user) { await signInGuest(); if (!user) return; }
     await loadQuota(); // 그림을 올리기 전에 한도부터 확인
     if (quotaBlock()) { setStatus(quotaBlock(), true); return; }
     state.busy = true; renderFiles();
