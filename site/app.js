@@ -10,7 +10,8 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   }
 
-  const EXAMPLE = {
+  // 둘러보기용 예시 시험지. 처음 온 사람이 자료를 올리기 전에 결과물을 먼저 본다.
+  const EXAMPLES = [{
     subject: "운영체제 중간고사",
     title: "운영체제 3장 · CPU 스케줄링 예상 기출",
     questions: [
@@ -20,7 +21,28 @@
       { type: "short", question: "우선순위 스케줄링에서 낮은 우선순위 프로세스가 무한히 기다리는 기아(starvation) 문제를 해결하기 위해, 대기 시간이 길어질수록 우선순위를 높여 주는 기법의 이름을 쓰시오.", answer: "에이징(Aging)", explanation: "에이징은 오래 기다린 프로세스의 우선순위를 점진적으로 올려 결국 실행되도록 보장한다.", source: "운영체제_3장.pdf p.18", points: 3 },
       { type: "essay", question: "다단계 피드백 큐(MLFQ)가 대화형 프로세스와 CPU 집중형 프로세스를 어떻게 구분해 다루는지, 큐 사이의 이동 규칙을 중심으로 서술하시오.", answer: "CPU를 오래 쓰는 프로세스는 하위(낮은 우선순위, 긴 퀀텀) 큐로 내려가고, 입출력 위주의 대화형 프로세스는 상위 큐에 머문다. 하위 큐에서 오래 기다린 프로세스는 에이징으로 상위 큐로 올려 기아를 막는다.", explanation: "채점 포인트: ① 퀀텀 소진 시 강등 ② 입출력 위주 프로세스는 상위 큐 유지 ③ 에이징을 통한 승격", source: "운영체제_3장.pdf p.24", points: 6 }
     ]
-  };
+  }, {
+    subject: "생리학 기말고사",
+    title: "심장 생리 · 심주기와 심박출량 예상 기출",
+    questions: [
+      { type: "mc", question: "심실 등용성 수축기(isovolumetric contraction)에 대한 설명으로 옳은 것은?", choices: ["방실판막과 반월판막이 모두 열려 있다", "심실 용적이 변하지 않으면서 심실압이 급격히 상승한다", "심실로 혈액이 가장 빠르게 채워지는 시기이다", "대동맥압이 심실압보다 낮아 혈액이 박출된다", "심방 수축이 심실 충만의 대부분을 담당하는 시기이다"], answer: 2, explanation: "방실판막이 닫히고 반월판막은 아직 열리지 않아 혈액의 출입이 없다. 용적은 그대로인 채 압력만 올라가며, 심실압이 대동맥압을 넘어서면 반월판막이 열려 박출기로 넘어간다.", source: "생리학_심혈관.pdf p.41", points: 3 },
+      { type: "mc", question: "안정 시 심박수 70회/분, 좌심실 확장기말 용적 120mL, 수축기말 용적 50mL인 성인의 심박출량(cardiac output)은?", choices: ["3.5 L/분", "4.9 L/분", "5.6 L/분", "8.4 L/분", "12.6 L/분"], answer: 2, explanation: "1회 박출량 = 120 − 50 = 70mL. 심박출량 = 70mL × 70회/분 = 4,900mL/분 = 4.9 L/분이다.", source: "생리학_심혈관.pdf p.47", points: 4 },
+      { type: "ox", question: "프랭크-스탈링 법칙에 따르면 정맥 환류량이 늘어 심실 확장기말 용적이 증가하면 1회 박출량도 증가한다.", answer: "O", explanation: "심근 섬유가 적정 범위에서 더 늘어나면 액틴과 미오신의 겹침이 최적화되어 수축력이 커진다. 전부하 증가가 박출량 증가로 이어지는 내재적 조절 기전이다.", source: "생리학_심혈관.pdf p.52", points: 2 },
+      { type: "short", question: "심실 수축기에 방실판막이 뒤집히지 않도록 판막 첨부를 유두근에 붙잡아 두는 가느다란 힘줄의 이름을 쓰시오.", answer: "건삭(chordae tendineae)", explanation: "유두근이 수축하며 건삭을 당겨, 심실압이 높아져도 방실판막이 심방 쪽으로 뒤집히는 것을 막는다.", source: "생리학_심혈관.pdf p.38", points: 3 },
+      { type: "essay", question: "출혈로 혈압이 떨어졌을 때 압수용체 반사(baroreceptor reflex)가 혈압을 회복시키는 과정을, 수용체 위치부터 심장과 혈관의 반응까지 순서대로 서술하시오.", answer: "경동맥동과 대동맥궁의 압수용체가 혈관 벽 신장 감소를 감지해 구심성 신호를 줄인다. 연수의 심혈관 중추가 이를 받아 교감신경 활성을 높이고 부교감(미주) 활성을 낮춘다. 그 결과 심박수와 수축력이 증가해 심박출량이 늘고, 세동맥이 수축해 총말초저항이 오르며, 정맥 수축으로 정맥 환류도 늘어 혈압이 회복된다.", explanation: "채점 포인트: ① 경동맥동·대동맥궁 압수용체 ② 연수 심혈관 중추 ③ 교감 항진·부교감 억제 ④ 심박출량 증가와 총말초저항 증가", source: "생리학_심혈관.pdf p.60", points: 6 }
+    ]
+  }, {
+    subject: "재무관리 중간고사",
+    title: "자본비용 · WACC와 투자안 평가 예상 기출",
+    questions: [
+      { type: "mc", question: "무위험이자율 3%, 시장위험프리미엄 6%, 베타 1.2인 기업의 자기자본비용을 CAPM으로 구하면?", choices: ["7.2%", "9.0%", "10.2%", "11.4%", "12.6%"], answer: 3, explanation: "CAPM에 따라 자기자본비용 = 3% + 1.2 × 6% = 3% + 7.2% = 10.2%이다.", source: "재무관리_5장.pdf p.19", points: 3 },
+      { type: "mc", question: "자기자본 60억, 타인자본 40억, 자기자본비용 12%, 세전 타인자본비용 8%, 법인세율 25%인 기업의 WACC는?", choices: ["7.2%", "8.6%", "9.6%", "10.4%", "11.2%"], answer: 3, explanation: "자기자본 비중 0.6, 타인자본 비중 0.4이다. WACC = 0.6 × 12% + 0.4 × 8% × (1 − 0.25) = 7.2% + 2.4% = 9.6%.", source: "재무관리_5장.pdf p.27", points: 4 },
+      { type: "ox", question: "타인자본비용에 (1 − 법인세율)을 곱하는 이유는 이자비용이 손금으로 인정되어 법인세를 줄여 주기 때문이다.", answer: "O", explanation: "이자비용의 감세 효과(tax shield)만큼 실질 자본비용이 낮아지므로 세후 기준으로 반영한다. 배당은 손금 불산입이라 자기자본비용에는 적용하지 않는다.", source: "재무관리_5장.pdf p.25", points: 2 },
+      { type: "short", question: "투자안의 순현재가치(NPV)를 0으로 만드는 할인율을 가리키는 용어를 쓰시오.", answer: "내부수익률(IRR)", explanation: "IRR이 자본비용보다 크면 해당 투자안은 가치를 창출한다. 다만 비정상 현금흐름에서는 복수의 IRR이 나올 수 있어 NPV가 더 신뢰할 수 있는 기준이다.", source: "재무관리_6장.pdf p.11", points: 3 },
+      { type: "essay", question: "상호배타적인 두 투자안을 평가할 때 NPV법과 IRR법의 결론이 엇갈릴 수 있는 이유를 설명하고, 어느 기준을 따라야 하는지 근거와 함께 서술하시오.", answer: "투자 규모가 다르거나 현금흐름의 시간적 분포가 다르면 두 방법의 순위가 달라진다. IRR은 중간 현금흐름이 IRR로 재투자된다고 가정하는 반면 NPV는 자본비용으로 재투자된다고 보는데, 후자가 현실적이다. 또 NPV는 금액으로 주주 부의 증가분을 직접 보여 주므로 상호배타적 투자안에서는 NPV가 큰 쪽을 택해야 한다.", explanation: "채점 포인트: ① 투자 규모 차이 ② 현금흐름 시점 차이 ③ 재투자 수익률 가정의 차이 ④ 주주 부 극대화 관점에서 NPV 우선", source: "재무관리_6장.pdf p.18", points: 6 }
+    ]
+  }];
+  const EXAMPLE = EXAMPLES[0];
 
   const state = {
     files: [],
@@ -946,13 +968,27 @@
     examBack = "book";
     go("exam");
   }
-  // 예시 시험지 (아직 내 시험지가 없을 때 둘러보기)
-  function openExample() {
-    state.exam = EXAMPLE; state.isExample = true; curExamId = null;
+  // 예시 시험지 둘러보기 (자료를 올리기 전에 결과물을 먼저 보여 준다)
+  function openExample(i, back) {
+    state.exam = EXAMPLES[i] || EXAMPLE; state.isExample = true; curExamId = null;
     resetRun();
     persist(); renderAll(); renderLib();
-    examBack = "book";
+    examBack = back || "book";
     go("exam");
+  }
+
+  // 출제하기 첫 화면 위의 예시 카드 3장
+  function renderSamples() {
+    const box = $("samples");
+    if (!box) return;
+    box.replaceChildren(...EXAMPLES.map((x, i) =>
+      el("li", { class: "ex example", style: `--c:${subjectColor(x.subject)}` },
+        el("button", { type: "button", class: "ex-open", onclick: () => openExample(i, "make"), "aria-label": x.title + " 예시 둘러보기" },
+          el("span", { class: "sub", text: "예시 · " + x.subject }),
+          el("span", { class: "ex-t", text: x.title }),
+          el("span", { class: "meta" },
+            el("span", { text: `${x.questions.length}문항 · 해설 포함` }),
+            el("span", { class: "go-tag", text: "둘러보기 →" }))))));
   }
 
   /* 한 번 누르면 "정말?"으로 바뀌고, 4초 안에 다시 누르면 실행 */
@@ -1061,12 +1097,13 @@
     if (!exams.length) {
       cards.push(el("li", { class: "empty-note", text: sb ? "아직 시험지가 없어요. '출제하기'에서 요청하거나 친구가 보낸 링크를 열면 여기에 쌓여요." : "사이트 설정 후 이용할 수 있어요." }));
       cards.push(el("li", { class: "ex example" + (state.isExample && view === "exam" ? " cur" : ""), style: "--c:var(--line)" },
-        el("button", { type: "button", class: "ex-open", onclick: openExample },
+        el("button", { type: "button", class: "ex-open", onclick: () => openExample(0) },
           el("span", { class: "sub", text: "예시 · " + EXAMPLE.subject }),
           el("span", { class: "ex-t", text: EXAMPLE.title }),
           el("span", { class: "meta" }, el("span", { text: `${EXAMPLE.questions.length}문항` }), el("span", { class: "go-tag", text: "둘러보기 →" })))));
     }
     $("examList").replaceChildren(...cards);
+    renderSamples();
     renderNotePage();
     renderBadges();
     renderFlow();
@@ -1814,7 +1851,7 @@
     });
     if (name === "exam") {
       $("backBtn").href = "#" + examBack;
-      $("backBtn").textContent = examBack === "wrong" ? "← 오답노트" : "← 문제집";
+      $("backBtn").textContent = examBack === "wrong" ? "← 오답노트" : examBack === "make" ? "← 출제하기" : "← 문제집";
     } else setOmrOpen(false);
     if (name === "book" && unseen) { unseen = 0; renderBadges(); renderFlow(); }
     if (name === "make" || name === "book") renderLib();

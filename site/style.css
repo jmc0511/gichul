@@ -494,3 +494,15 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .install-bar .btn { flex: none; padding: 6px 14px; }
 .install-x { flex: none; border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 4px 6px; }
 .install-x:hover { color: var(--ink); }
+
+/* 출제하기 첫 화면의 예시 시험지 카드 */
+.samples-sec { margin: -4px 0 26px; }
+.samples-t { margin: 0 0 10px; font-size: 13.5px; font-weight: 600; }
+.samples-t span { color: var(--muted); font-weight: 400; }
+.samples { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+@media (max-width: 760px) {
+  .samples { grid-auto-flow: column; grid-auto-columns: 80%; grid-template-columns: none;
+             overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px;
+             margin-inline: -20px; padding-inline: 20px; }
+  .samples > .ex { scroll-snap-align: start; }
+}
