@@ -80,12 +80,27 @@ function message(record: Record<string, unknown>) {
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("ok");
 
-  const secret = Deno.env.get("PUSH_SECRET");
-  if (secret && req.headers.get("x-push-secret") !== secret) {
+  // 웹훅이 보내는 비밀 헤더가 맞아야만 움직인다.
+  // (PUSH_SECRET 을 넣어 두지 않으면 아무것도 받지 않는다 — 주소만 알아도 못 부르게)
+  // (대시보드에 붙여 넣을 때 줄바꿈이 섞여도 되도록 앞뒤 공백은 무시한다)
+  const secret = Deno.env.get("PUSH_SECRET")?.trim();
+  if (!secret || req.headers.get("x-push-secret")?.trim() !== secret) {
     return new Response("no", { status: 401 });
   }
 
   const payload = await req.json().catch(() => null);
+
+  // 설정이 제대로 됐는지 보는 자가진단 (알림은 보내지 않는다)
+  if (payload?.selftest) {
+    try {
+      const account = JSON.parse(Deno.env.get("FCM_SERVICE_ACCOUNT")!);
+      await accessToken(account);
+      return new Response(`ok: ${account.project_id} 로 보낼 준비가 됐습니다`);
+    } catch (e) {
+      return new Response(`FCM 설정 문제: ${e}`, { status: 500 });
+    }
+  }
+
   const record = payload?.record as Record<string, unknown> | undefined;
   const before = payload?.old_record as Record<string, unknown> | undefined;
   if (!record?.id) return new Response("skip: no record");
