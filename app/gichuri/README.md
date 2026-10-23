@@ -52,5 +52,5 @@ dart run flutter_native_splash:create
 - **안드로이드 빌드 도구(AGP)는 8.13 으로 묶어 두었습니다.** `flutter_inappwebview` 와
   `flutter_web_auth_2` 안정판이 아직 AGP 9 에서 빌드되지 않습니다. 두 플러그인이 올라오면
   `android/settings.gradle.kts` 에서 Flutter 기본값으로 되돌리면 됩니다.
-- 웹뷰 안에서 열리는 곳은 `gichul.site` 와 `*.supabase.co` 뿐입니다. 나머지(카카오페이 QR, 메일
-  링크 등)는 사파리·크롬·다른 앱으로 넘깁니다.
+- 웹뷰 안에서 열리는 곳은 `gichul.site` 와 `*.supabase.co` 뿐입니다. 나머지(메일 링크, 바깥
+  사이트 등)는 사파리·크롬·다른 앱으로 넘깁니다.

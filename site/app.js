@@ -1027,7 +1027,6 @@
     // 완료된 요청은 "내 시험지"에 나오므로 요청 목록에서는 진행 중·실패만 보여줌
     const visible = requests.filter((r) => r.status !== "done").slice(0, 10);
     $("reqHead").hidden = !visible.length;
-    $("tipLine").hidden = !visible.some((r) => r.status === "pending" || r.status === "working");
     $("reqList").replaceChildren(...visible.map((r) => {
       const base = r.subject || (Array.isArray(r.files) ? r.files.join(", ") : "요청");
       const name = r.regen_exam != null ? `${r.regen_idx + 1}번 문제 다시 · ${base}` : base;
@@ -1769,14 +1768,6 @@
   }
   $("grade").addEventListener("click", grade);
   $("print").addEventListener("click", () => printSheet(false));
-  // 카카오페이 송금 링크는 PC에서 안 열림 → PC(마우스)에서는 휴대폰으로 찍을 QR을 보여 줌
-  document.querySelectorAll('a[href^="https://qr.kakaopay.com/"]').forEach((a) => a.addEventListener("click", (e) => {
-    if (matchMedia("(pointer: coarse)").matches) return;
-    e.preventDefault();
-    $("supportDlg").showModal();
-  }));
-  $("supportClose").addEventListener("click", () => $("supportDlg").close());
-  $("supportDlg").addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
   $("printKey").addEventListener("click", () => printSheet(true));
   $("mGrade").addEventListener("click", () => { setOmrOpen(false); $("grade").click(); });
   // 좁은 화면: 답안지는 아래에서 올라오는 시트
