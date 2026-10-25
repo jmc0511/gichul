@@ -692,6 +692,13 @@
     return chosen;
   }
 
+  // DB가 못 받는 글자 정리: PDF에서 딸려 오는 널 문자(\u0000), 반쪽 이모지(짝 없는 서로게이트)
+  // (이게 있으면 "unsupported Unicode escape sequence" 로 요청이 실패함)
+  const dbText = (s) => {
+    s = String(s).replace(/\u0000/g, "");
+    return s.toWellFormed ? s.toWellFormed() : s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
+  };
+
   function buildMaterial(images = []) {
     const ready = activeFiles();
     const tag = (f, i) => {
@@ -819,11 +826,11 @@
       setStatus("요청을 보내는 중…");
       const { error } = await sb.from("requests").insert({
         id,
-        subject: $("subject").value.trim() || null,
-        files: ready.map((f) => f.name),
+        subject: dbText($("subject").value.trim()) || null,
+        files: ready.map((f) => dbText(f.name)),
         pages: ready.reduce((a, f) => a + f.pages.length, 0),
-        instructions: buildInstructions(),
-        material,
+        instructions: dbText(buildInstructions()),
+        material: dbText(material),
         images: images.length ? images : null
       });
       if (error) throw error;
