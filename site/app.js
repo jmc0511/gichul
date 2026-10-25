@@ -3,7 +3,7 @@
   const MARKS = ["①", "②", "③", "④", "⑤"];
   const TYPE_LABEL = { mc: "객관식", ox: "O/X", short: "단답형", essay: "서술형" };
   const STATUS = { pending: "대기 중", working: "출제 중", done: "완료", error: "실패" };
-  const TEXT_BUDGET = 150000;
+  const TEXT_BUDGET = 80000; // Claude에 보내는 자료 글자 상한 (사용량 대부분이 이 입력). 넘으면 쪽마다 고르게 줄임
   const POLL_MS = 15000;   // 실시간 알림이 끊겼을 때를 위한 예비 확인
 
   if (window.pdfjsLib) {
@@ -689,10 +689,18 @@
       const nos = images.filter((c) => c.f === f && c.page === i).map((c) => "#" + c.no);
       return nos.length ? `\n[이 쪽의 그림: 첨부 이미지 ${nos.join(", ")}]` : "";
     };
-    const blocks = ready.map((f) => ({ name: f.name, text: f.pages.map((p, i) => `[${pageName(f, i)}]\n${p}${tag(f, i)}`).join("\n\n") }));
-    const total = blocks.reduce((a, b) => a + b.text.length, 0);
-    const ratio = total > TEXT_BUDGET ? TEXT_BUDGET / total : 1;
-    return blocks.map((b) => `===== 자료: ${b.name} =====\n` + (ratio < 1 ? b.text.slice(0, Math.floor(b.text.length * ratio)) + "\n(…이하 생략)" : b.text)).join("\n\n");
+    // 글자가 많으면 앞부분만 남기지 않고 쪽마다 고르게 줄임 (시험 범위 전체에서 문제가 나오게)
+    // 쪽마다 같은 상한 c: 짧은 쪽은 그대로, 긴 쪽만 c자까지 (합이 TEXT_BUDGET 이 되는 c를 찾음)
+    const lens = ready.flatMap((f) => f.pages.map((p) => String(p).length));
+    const total = lens.reduce((a, b) => a + b, 0);
+    let cap = Infinity;
+    if (total > TEXT_BUDGET) {
+      let lo = 0, hi = Math.max(...lens);
+      while (hi - lo > 1) { const c = (lo + hi) >> 1; if (lens.reduce((a, n) => a + Math.min(n, c), 0) > TEXT_BUDGET) hi = c; else lo = c; }
+      cap = lo;
+    }
+    const cut = (p) => (p = String(p), p.length > cap ? p.slice(0, cap) + " (…생략)" : p);
+    return ready.map((f) => `===== 자료: ${f.name} =====\n` + f.pages.map((p, i) => `[${pageName(f, i)}]\n${cut(p)}${tag(f, i)}`).join("\n\n")).join("\n\n");
   }
 
   function buildInstructions() {
