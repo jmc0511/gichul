@@ -494,6 +494,7 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .install-bar { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; padding: 10px 12px 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--chip); font-size: 14px; }
 .install-ico { font-size: 18px; flex: none; }
 .install-text { flex: 1; min-width: 0; color: var(--ink); }
+.install-text b { font-weight: 700; }
 .install-bar .btn { flex: none; padding: 6px 14px; }
 .install-x { flex: none; border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 4px 6px; }
 .install-x:hover { color: var(--ink); }
@@ -514,3 +515,4 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .trust svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--ok, var(--omr)); }
 .trust b { font-weight: 600; color: var(--ink); }
 .trust a { margin-left: 8px; color: var(--muted); }
+.foot-links a[hidden] + span { display: none; } /* 숨긴 링크 뒤 구분점도 숨김 */
