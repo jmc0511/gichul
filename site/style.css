@@ -480,7 +480,7 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
   }
   @page { size: A4; margin: 14mm 12mm; }
   body { background: #fff; }
-  .top, .back, .omr, .mbar, .toast, .foot-links, .q-tools, .sheet-tools, .timer-pick, .exam-bar, .ex-flag, .rank, .report, .math-preview, .selfcheck { display: none !important; }
+  .install-bar, .top, .back, .omr, .mbar, .toast, .foot-links, .q-tools, .sheet-tools, .timer-pick, .exam-bar, .ex-flag, .rank, .report, .math-preview, .selfcheck { display: none !important; }
   .view:not(#view-exam) { display: none !important; }
   .wrap { padding: 0; max-width: none; }
   .solve { display: block; }
@@ -492,6 +492,11 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
   .sol { border-left: 2px solid #000; background: none; break-inside: avoid; }
   .fig-box { break-inside: avoid; }
   .per-page-chunk { break-after: page; }
+  /* 다단(columns) 대신 2열 격자: 왼쪽 단을 위에서 아래로 채운 뒤 오른쪽 단 */
+  .per-page-chunk { columns: auto; column-rule: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: repeat(var(--rows, 1), auto); grid-auto-flow: column; column-gap: 40px; }
+  /* 한 장에 들어가게 잡은 높이(Edge PDF로 맞춰 봄): 첫 장은 제목·성명 칸이 있어서 더 낮게. 문제가 길면 그만큼 늘어남 */
+  .per-page-chunk .q { min-height: calc(215mm / var(--rows, 1)); margin-bottom: 0; padding-bottom: 6mm; box-sizing: border-box; }
+  .per-page-chunk.first .q { min-height: calc(150mm / var(--rows, 1)); }
   .per-page-chunk:last-child { break-after: auto; }
 }
 

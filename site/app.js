@@ -1430,7 +1430,8 @@
     // 인쇄할 때 '한 장에 N문제'를 골랐으면 N문제씩 묶어 묶음마다 새 장에서 시작
     const per = state.printKey != null ? perPage() : 0;
     const qs = ex.questions.map((q, i) => renderQ(q, i));
-    if (per) for (let k = 0; k < qs.length; k += per) nodes.push(el("div", { class: "questions per-page-chunk" }, ...qs.slice(k, k + per)));
+    // 문제마다 같은 높이를 줘서 남는 곳이 각 문제 아래 풀이 칸이 되게 (2단이라 한 단에 N/2문제)
+    if (per) for (let k = 0; k < qs.length; k += per) nodes.push(el("div", { class: "questions per-page-chunk" + (k ? "" : " first"), style: `--rows:${Math.ceil(per / 2)}` }, ...qs.slice(k, k + per)));
     else nodes.push(el("div", { class: "questions" }, ...qs));
     sheet.replaceChildren(...nodes);
     renderMath(sheet);
