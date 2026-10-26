@@ -129,6 +129,7 @@ button { cursor: pointer; }
 .seg .num { font-family: var(--f-num); min-width: 46px; text-align: center; }
 .cond { display: grid; grid-template-columns: auto auto auto; gap: 18px 28px; justify-content: start; }
 @media (max-width: 1100px) { .cond { grid-template-columns: minmax(0, 1fr); } }
+@media (min-width: 1101px) { .cond .field-per { grid-column: span 2; } } /* 버튼 5개가 한 줄에 들어가게 */
 details.more { border-top: 1px solid var(--line); padding-top: 12px; }
 details.more summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--ink); list-style: none; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 details.more summary::-webkit-details-marker { display: none; }

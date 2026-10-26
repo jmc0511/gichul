@@ -617,7 +617,8 @@
   function renderSend() {
     const count = checkedVals("count")[0]?.value || "10";
     const types = checkedVals("type").map((i) => TYPE_LABEL[i.value]);
-    $("sumCount").textContent = `${count}문항 · ` + (types.length ? types.join("·") : "유형을 골라 주세요");
+    const per = parseInt(checkedVals("perpage")[0]?.value, 10) || 0;
+    $("sumCount").textContent = `${count}문항 · ` + (types.length ? types.join("·") : "유형을 골라 주세요") + (per ? ` · 한 장에 ${per}문제` : "");
     const levels = checkedVals("level").map((i) => i.nextElementSibling.textContent);
     $("sumLevel").textContent = levels.length ? levels.join(" + ") + (levels.length > 1 ? " 섞어서" : "") : "난이도를 골라 주세요";
     // '자세히' 안에서 바꾼 것이 있으면 접힌 상태에서도 보이게
@@ -835,6 +836,7 @@
       });
       if (error) throw error;
       store("gichul.myreqs", [id, ...myRequestIds()].slice(0, 30));
+      rememberPerPage(id, parseInt(checkedVals("perpage")[0]?.value, 10) || 0);
       notifyWorker();
       state.busy = false; // 자료는 자료함에 그대로 둠 (다음 출제에 다시 체크해서 쓸 수 있게)
       renderFiles();
@@ -1015,6 +1017,7 @@
     if (!d) { refresh(); return; }
     state.exam = normalize(d);
     state.isExample = false; curExamId = id;
+    $("perPage").value = String(perPageFor(id));
     resetRun();
     persist(); renderAll(); renderLib();
     examBack = "book";
@@ -1023,6 +1026,7 @@
   // 예시 시험지 둘러보기 (자료를 올리기 전에 결과물을 먼저 보여 준다)
   function openExample(i, back) {
     state.exam = EXAMPLES[i] || EXAMPLE; state.isExample = true; curExamId = null;
+    $("perPage").value = String(load("gichul.perPage", 0));
     resetRun();
     persist(); renderAll(); renderLib();
     examBack = back || "book";
@@ -1660,9 +1664,30 @@
   }
 
   /* ---------- 인쇄 · PDF ---------- */
+  // 한 장에 N문제: 출제 조건에서 고른 값은 그 요청(→ 시험지)에 기억, 시험지 옆에서 바꾸면 그 시험지에 기억
   const perPage = () => parseInt($("perPage").value, 10) || 0;
-  $("perPage").value = String(load("gichul.perPage", 0));
-  $("perPage").addEventListener("change", () => store("gichul.perPage", perPage()));
+  function rememberPerPage(key, n) {
+    const m = load("gichul.perPageMap", {});
+    delete m[key];
+    m[key] = n;
+    const keys = Object.keys(m);
+    keys.slice(0, Math.max(0, keys.length - 60)).forEach((k) => delete m[k]); // 최근 60개만
+    store("gichul.perPageMap", m);
+  }
+  function perPageFor(examId) {
+    const m = load("gichul.perPageMap", {});
+    if (examId in m) return m[examId];
+    const r = requests.find((x) => x.exam_id === examId && x.id in m);
+    return r ? m[r.id] : load("gichul.perPage", 0);
+  }
+  $("perPage").value = String(curExamId ? perPageFor(curExamId) : load("gichul.perPage", 0));
+  $("perPage").addEventListener("change", () => {
+    if (curExamId) rememberPerPage(curExamId, perPage()); else store("gichul.perPage", perPage());
+  });
+  // 출제 조건의 기본값 = 마지막으로 고른 값
+  const perInit = document.querySelector(`input[name="perpage"][value="${load("gichul.perPage", 0)}"]`);
+  if (perInit) perInit.checked = true;
+  document.querySelectorAll('input[name="perpage"]').forEach((i) => i.addEventListener("change", () => { store("gichul.perPage", parseInt(i.value, 10) || 0); renderSend(); }));
   async function printSheet(withKey) {
     if (!state.exam) return;
     state.printKey = withKey;
