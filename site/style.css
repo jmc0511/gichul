@@ -466,6 +466,8 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 
 /* 답안지 아래 링크 · 사이트 아래 */
 .save-txt { font-size: 12.5px; padding: 2px 0; }
+.per-page { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); }
+.per-page select { font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
 .foot-links { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center; font-size: 12.5px; color: var(--muted); padding-top: 8px; }
 .foot-links a { color: var(--muted); }
 
@@ -488,6 +490,8 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
   body:not(.print-key) .sol { display: none !important; }
   .sol { border-left: 2px solid #000; background: none; break-inside: avoid; }
   .fig-box { break-inside: avoid; }
+  .per-page-chunk { break-after: page; }
+  .per-page-chunk:last-child { break-after: auto; }
 }
 
 /* 홈 화면 앱 설치 안내 */

@@ -1423,7 +1423,11 @@
         el("span", null, "문항 수 ", el("span", { class: "tn", text: String(ex.questions.length) }), " · 배점 ", el("span", { class: "tn", text: total + "점" })),
         el("span", null, "성명 ", el("span", { class: "blank" }), "  학번 ", el("span", { class: "blank" }))));
     if (state.graded && realExam()) nodes.push(renderRank());
-    nodes.push(el("div", { class: "questions" }, ...ex.questions.map((q, i) => renderQ(q, i))));
+    // 인쇄할 때 '한 장에 N문제'를 골랐으면 N문제씩 묶어 묶음마다 새 장에서 시작
+    const per = state.printKey != null ? perPage() : 0;
+    const qs = ex.questions.map((q, i) => renderQ(q, i));
+    if (per) for (let k = 0; k < qs.length; k += per) nodes.push(el("div", { class: "questions per-page-chunk" }, ...qs.slice(k, k + per)));
+    else nodes.push(el("div", { class: "questions" }, ...qs));
     sheet.replaceChildren(...nodes);
     renderMath(sheet);
     sheet.querySelectorAll("textarea.write").forEach(autoGrow);
@@ -1656,6 +1660,9 @@
   }
 
   /* ---------- 인쇄 · PDF ---------- */
+  const perPage = () => parseInt($("perPage").value, 10) || 0;
+  $("perPage").value = String(load("gichul.perPage", 0));
+  $("perPage").addEventListener("change", () => store("gichul.perPage", perPage()));
   async function printSheet(withKey) {
     if (!state.exam) return;
     state.printKey = withKey;
