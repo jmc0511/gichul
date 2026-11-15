@@ -8,7 +8,7 @@ services:
       - POLL_SECONDS=30
       - MAX_PARALLEL=3
       # 더 빠르게: sonnet / 기본 모델 쓰려면 비워 둠
-      - CLAUDE_MODEL=
+      - CLAUDE_MODEL=claude-opus-5-5
       # 보안: claude.ai 계정에 연결된 커넥터(Google Drive 등)를 처리기에서 쓰지 않음
       - ENABLE_CLAUDEAI_MCP_SERVERS=false
     volumes:

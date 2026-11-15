@@ -92,7 +92,7 @@
             <label class="files-all"><input type="checkbox" id="filesAll"> 모두 선택</label>
           </div>
           <ul class="files" id="files"></ul>
-          <p class="files-tip" id="filesTip">올린 파일은 이 기기에 보관돼요. 체크한 자료에서 뽑아낸 글과 그림만 출제에 쓰여요.</p>
+          <p class="files-tip" id="filesTip">올린 파일은 이 기기에 보관돼요. 체크한 자료에서 뽑아낸 글과 그림만 출제에 쓰여요.<br>지난 시험지(족보)도 같이 올리고 <b>족보</b>를 눌러 두면 기출 경향을 반영해 문제를 예측해요.</p>
         </div>
 
         <div class="step" id="condStep">
@@ -140,6 +140,16 @@
                 <label><input type="checkbox" name="level" id="l1" value="기본 개념 확인"><span>기본</span></label>
                 <label><input type="checkbox" name="level" id="l2" value="실제 시험 수준" checked><span>실전</span></label>
                 <label><input type="checkbox" name="level" id="l3" value="상위권 변별용 고난도"><span>고난도</span></label>
+              </div>
+            </div>
+            <div class="field field-per" id="perPageField">
+              <span class="lbl">시험지 한 장에 <small>인쇄할 때 · 문제 아래 남는 곳은 풀이 칸</small></span>
+              <div class="seg" role="radiogroup" aria-label="시험지 한 장에 넣을 문제 수">
+                <label><input type="radio" name="perpage" value="0" checked><span>자동</span></label>
+                <label><input type="radio" name="perpage" value="2"><span class="num">2</span></label>
+                <label><input type="radio" name="perpage" value="4"><span class="num">4</span></label>
+                <label><input type="radio" name="perpage" value="6"><span class="num">6</span></label>
+                <label><input type="radio" name="perpage" value="8"><span class="num">8</span></label>
               </div>
             </div>
           </div>
@@ -225,6 +235,15 @@
           <button class="btn primary" id="grade" type="button">채점하기</button>
           <button class="btn" id="showAll" type="button">해설 모두 보기</button>
           <button class="btn" id="reset" type="button">답안 지우기</button>
+          <label class="per-page">인쇄할 때 한 장에
+            <select id="perPage" aria-label="인쇄할 때 한 장에 넣을 문제 수">
+              <option value="0">자동 (꽉 채움)</option>
+              <option value="2">2문제</option>
+              <option value="4">4문제</option>
+              <option value="6">6문제</option>
+              <option value="8">8문제</option>
+              <option value="10">10문제</option>
+            </select></label>
           <button class="btn" id="print" type="button">인쇄 · PDF 저장</button>
           <button class="btn" id="printKey" type="button">정답 포함 인쇄</button>
           <button class="link save-txt" id="save" type="button">텍스트 파일로 저장</button>
@@ -253,6 +272,8 @@
   </section>
 
   <footer class="foot-links">
+    <a href="https://apps.apple.com/kr/app/id6826055075" id="appStoreLink" target="_blank" rel="noopener">📱 iOS 앱 (App Store)</a>
+    <span aria-hidden="true">·</span>
     <a href="#" id="installLink" hidden>📲 앱으로 설치</a>
     <span aria-hidden="true">·</span>
     <a href="privacy.html">개인정보처리방침</a>
