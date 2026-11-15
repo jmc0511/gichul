@@ -275,8 +275,8 @@
     if (error || !data || !data.length) { setStatus("링크의 시험지를 찾을 수 없어요. 주소가 정확한지 확인해 주세요.", true); return; }
     rememberExam(id);
     exams = [data[0], ...exams.filter((x) => x.id !== id)];
-    openExam(id);
-    history.replaceState(null, "", location.pathname + "#exam");
+    openResult(id);
+    history.replaceState(null, "", location.pathname + "#" + (isDoc(data[0]) ? "doc" : "exam"));
   }
 
   /* ---------- 작은 DOM 도우미 ---------- */
@@ -605,12 +605,52 @@
 
   /* 보내기 카드: 고른 조건 요약과 진행 단계 */
   const checkedVals = (name) => [...document.querySelectorAll(`input[name="${name}"]:checked`)];
+  /* ---------- 무엇을 만들까 (시험지 · 요약 · 설명) ---------- */
+  const KIND_LABEL = { exam: "시험지", summary: "요약", explain: "설명" };
+  const KIND_HINT = {
+    exam: "자료에서 나올 만한 문제를 뽑아요",
+    summary: "시험 직전에 훑어볼 요점·용어·공식으로 정리해요",
+    explain: "개념을 쉬운 말로 풀고 왜 그런지와 예시를 붙여요"
+  };
+  const LENGTH_LABEL = { short: "짧게", normal: "보통", long: "자세히" };
+
+  const curKind = () => checkedVals("kind")[0]?.value || "exam";
+  const curLength = () => checkedVals("length")[0]?.value || "normal";
+
+  /** 종류에 따라 조건 칸을 보이고 숨긴다 (시험지에만 있는 조건이 많다) */
+  function applyKindUI() {
+    const kind = curKind();
+    const isExam = kind === "exam";
+    $("condTitle").textContent = isExam ? "출제 조건" : KIND_LABEL[kind] + " 조건";
+    $("kindHint").textContent = KIND_HINT[kind];
+    $("lengthField").hidden = isExam;
+    $("countField").hidden = !isExam;
+    $("typeField").hidden = !isExam;
+    $("levelField").hidden = !isExam;
+    // '자세히' 안에서도 시험지 전용 칸은 숨긴다
+    $("a-vocab")?.closest(".field")?.toggleAttribute("hidden", !isExam);
+    $("fig-on")?.closest(".field")?.toggleAttribute("hidden", !isExam);
+    $("go").textContent = isExam ? "출제 요청 보내기" : KIND_LABEL[kind] + " 요청 보내기";
+    $("moreHint").textContent = isExam
+      ? "과목명 · 문제 언어 · 외국어 영역 · 그림 · 추가 요청"
+      : "과목명 · 언어 · 추가 요청";
+  }
+
   function renderSend() {
-    const count = checkedVals("count")[0]?.value || "10";
-    const types = checkedVals("type").map((i) => TYPE_LABEL[i.value]);
-    $("sumCount").textContent = `${count}문항 · ` + (types.length ? types.join("·") : "유형을 골라 주세요");
-    const levels = checkedVals("level").map((i) => i.nextElementSibling.textContent);
-    $("sumLevel").textContent = levels.length ? levels.join(" + ") + (levels.length > 1 ? " 섞어서" : "") : "난이도를 골라 주세요";
+    const kind = curKind();
+    const isExam = kind === "exam";
+    $("sumCountDt").textContent = isExam ? "문항" : "만들 것";
+    $("sumLevelDt").textContent = isExam ? "난이도" : "분량";
+    if (isExam) {
+      const count = checkedVals("count")[0]?.value || "10";
+      const types = checkedVals("type").map((i) => TYPE_LABEL[i.value]);
+      $("sumCount").textContent = `${count}문항 · ` + (types.length ? types.join("·") : "유형을 골라 주세요");
+      const levels = checkedVals("level").map((i) => i.nextElementSibling.textContent);
+      $("sumLevel").textContent = levels.length ? levels.join(" + ") + (levels.length > 1 ? " 섞어서" : "") : "난이도를 골라 주세요";
+    } else {
+      $("sumCount").textContent = KIND_LABEL[kind];
+      $("sumLevel").textContent = LENGTH_LABEL[curLength()];
+    }
     // '자세히' 안에서 바꾼 것이 있으면 접힌 상태에서도 보이게
     const set = [];
     if ($("subject").value.trim()) set.push($("subject").value.trim());
@@ -620,7 +660,8 @@
     const areas = checkedVals("area").map((i) => i.value);
     if (areas.length) set.push(areas.join("·"));
     if ($("extra").value.trim()) set.push("추가 요청 있음");
-    $("moreHint").textContent = set.length ? "바꾼 것: " + set.join(" · ") : "과목명 · 문제 언어 · 외국어 영역 · 그림 · 추가 요청";
+    const plain = isExam ? "과목명 · 문제 언어 · 외국어 영역 · 그림 · 추가 요청" : "과목명 · 언어 · 추가 요청";
+    $("moreHint").textContent = set.length ? "바꾼 것: " + set.join(" · ") : plain;
     $("moreHint").classList.toggle("set", !!set.length);
     renderFlow();
   }
@@ -695,6 +736,43 @@
     return blocks.map((b) => `===== 자료: ${b.name} =====\n` + (ratio < 1 ? b.text.slice(0, Math.floor(b.text.length * ratio)) + "\n(…이하 생략)" : b.text)).join("\n\n");
   }
 
+  /** 요약·설명 지시문. 시험지(buildInstructions)와 달리 문항·난이도 조건이 없다. */
+  function buildDocInstructions(kind) {
+    const subject = $("subject").value.trim();
+    const extra = $("extra").value.trim();
+    const lang = checkedVals("lang")[0]?.value || "ko";
+    const langRule = lang === "src" ? "- 자료에 쓰인 언어를 그대로 쓰세요."
+      : lang === "mix" ? "- 자료의 용어·인용은 자료 언어 그대로 두고, 설명하는 글은 한국어로 쓰세요."
+      : "- 한국어로 쓰세요. 전공 용어는 자료의 표기를 그대로 두고 필요하면 괄호로 원어를 덧붙이세요.";
+
+    const length = curLength();
+    const amount = kind === "summary"
+      ? { short: "- 분량: 짧게. 자료 전체를 A4 한 장으로 훑을 정도로, 단원마다 요점 3~5줄만 남기세요. 덜 중요한 단원은 묶으세요.",
+          normal: "- 분량: 보통. 단원마다 요점 5~8줄, 용어와 공식은 자료에 나온 것을 빠뜨리지 마세요.",
+          long: "- 분량: 자세히. 단원을 잘게 나누고 요점 8~12줄까지, 자료의 세부 조건·예외·단위까지 남기세요." }[length]
+      : { short: "- 분량: 짧게. 자료에서 가장 중요한 개념 3~6개만 고르고, 하나당 짧게 설명하세요.",
+          normal: "- 분량: 보통. 자료의 주요 개념을 빠짐없이 다루되, 하나당 3~6문장으로.",
+          long: "- 분량: 자세히. 개념을 잘게 나누고, 예시와 자주 헷갈리는 지점을 되도록 모두 붙이세요." }[length];
+
+    const head = kind === "summary"
+      ? ["당신은 대학 강의 자료를 정리해 주는 조교입니다. 학생의 공부자료를 근거로 시험 직전에 훑어볼 요약을 만드세요.",
+         "", "[정리 조건]"]
+      : ["당신은 대학 강의 자료를 쉽게 풀어 주는 조교입니다. 학생의 공부자료를 근거로 이해를 돕는 설명을 만드세요.",
+         "", "[설명 조건]"];
+
+    return [
+      ...head,
+      `- 제목: ${subject || "자료 내용에 맞게 정하세요"}`,
+      amount,
+      extra ? `- 추가 요청: ${extra}` : null,
+      langRule,
+      "",
+      kind === "summary"
+        ? '[출력 형식] JSON 하나: {"title":"…","subject":"…","sections":[{"heading":"단원 이름","points":["요점 한 줄"],"terms":[{"term":"용어","meaning":"뜻"}],"formulas":["$E=mc^2$ — 에너지"],"source":"강의노트.pdf p.4"}]}'
+        : '[출력 형식] JSON 하나: {"title":"…","subject":"…","sections":[{"heading":"개념 이름","body":"쉬운 설명","why":"왜 그런지","example":"예시","pitfall":"헷갈리는 지점","source":"강의노트.pdf p.4"}]}'
+    ].filter((x) => x != null).join("\n");
+  }
+
   function buildInstructions() {
     const count = document.querySelector('input[name="count"]:checked').value;
     const types = [...document.querySelectorAll('input[name="type"]:checked')].map((i) => i.value);
@@ -752,8 +830,12 @@
   }
 
   async function submitRequest() {
-    if (!document.querySelectorAll('input[name="type"]:checked').length) { setStatus("문제 유형을 하나 이상 고르세요.", true); return; }
-    if (!document.querySelectorAll('input[name="level"]:checked').length) { setStatus("난이도를 하나 이상 고르세요.", true); return; }
+    const kind = curKind();
+    // 문제 유형·난이도는 시험지에만 있는 조건이다
+    if (kind === "exam") {
+      if (!document.querySelectorAll('input[name="type"]:checked').length) { setStatus("문제 유형을 하나 이상 고르세요.", true); return; }
+      if (!document.querySelectorAll('input[name="level"]:checked').length) { setStatus("난이도를 하나 이상 고르세요.", true); return; }
+    }
     askNotify();
     const picked = pickImages();
     const material = buildMaterial(picked);
@@ -787,7 +869,8 @@
         subject: $("subject").value.trim() || null,
         files: ready.map((f) => f.name),
         pages: ready.reduce((a, f) => a + f.pages.length, 0),
-        instructions: buildInstructions(),
+        kind,
+        instructions: kind === "exam" ? buildInstructions() : buildDocInstructions(kind),
         material,
         images: images.length ? images : null
       });
@@ -798,7 +881,7 @@
       renderFiles();
       await refresh();
       go("book"); // 진행 상황은 문제집에서 보임
-      setStatus("요청을 보냈어요. 보통 1~2분 뒤 이 문제집에 시험지가 올라와요.");
+      setStatus(`요청을 보냈어요. 보통 1~2분 뒤 이 문제집에 ${KIND_LABEL[kind]}이(가) 올라와요.`);
     } catch (e) {
       state.busy = false;
       renderFiles();
@@ -931,20 +1014,21 @@
   function announceFinished(r) {
     const ok = r.status === "done";
     const isRegen = r.regen_exam != null;
-    const name = r.subject || (r.files || []).join(", ") || "요청한 시험지";
-    const msg = !ok ? `"${name}" 출제에 실패했어요. 문제집에서 다시 시도할 수 있어요.`
+    const kindName = KIND_LABEL[r.kind] || "시험지";
+    const name = r.subject || (r.files || []).join(", ") || ("요청한 " + kindName);
+    const msg = !ok ? `"${name}" ${kindName} 만들기에 실패했어요. 문제집에서 다시 시도할 수 있어요.`
       : isRegen ? `${r.regen_idx + 1}번 문제를 새 문제로 바꿨어요.`
-      : `"${name}" 시험지가 완성됐어요. 문제집에서 열어 보세요.`;
+      : `"${name}" ${kindName}이(가) 완성됐어요. 문제집에서 열어 보세요.`;
     if (ok && !isRegen && view !== "book") { unseen++; renderBadges(); }
     if (!state.busy) setStatus(msg, !ok);
     // 보고 있던 시험지의 문제가 바뀌었으면 그 문제만 새로 그림
     if (ok && isRegen && curExamId === r.regen_exam) reloadExam(r.regen_exam, r.regen_idx);
     if (!document.hidden) return;
-    document.title = (ok ? "✅ " : "⚠️ ") + (isRegen ? "문제 교체 완료" : ok ? "시험지 완성" : "출제 실패") + " · " + BASE_TITLE;
+    document.title = (ok ? "✅ " : "⚠️ ") + (isRegen ? "문제 교체 완료" : ok ? kindName + " 완성" : kindName + " 실패") + " · " + BASE_TITLE;
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const n = new Notification(ok ? (isRegen ? "문제를 바꿨어요" : "시험지가 완성됐어요") : "출제에 실패했어요", { body: ok && !isRegen ? name : msg, tag: "gichuri-" + r.id });
-        n.onclick = () => { window.focus(); if (ok && r.exam_id) openExam(r.exam_id); n.close(); };
+        const n = new Notification(ok ? (isRegen ? "문제를 바꿨어요" : `${kindName}이(가) 완성됐어요`) : `${kindName}을(를) 만들지 못했어요`, { body: ok && !isRegen ? name : msg, tag: "gichuri-" + r.id });
+        n.onclick = () => { window.focus(); if (ok && r.exam_id) openResult(r.exam_id); n.close(); };
       }
     } catch (e) {}
   }
@@ -966,6 +1050,82 @@
     clearTimeout(pollTimer);
     const waiting = requests.some((r) => r.status === "pending" || r.status === "working");
     pollTimer = setTimeout(() => { if (!document.hidden) refresh(); else schedulePoll(); }, waiting ? POLL_MS : POLL_MS * 15);
+  }
+
+  /* ---------- 요약 · 설명 화면 ----------
+     문항이 없는 결과. 시험지와 달리 채점·OMR·오답노트가 없고 읽기만 한다. */
+  let curDoc = null;
+
+  const isDoc = (x) => x && x.kind && x.kind !== "exam";
+
+  function openDoc(id) {
+    const d = exams.find((x) => x.id === id);
+    if (!d) { refresh(); return; }
+    curDoc = d;
+    curExamId = id;
+    renderDoc();
+    renderLib();
+    go("doc");
+  }
+
+  function docSections(d) {
+    return Array.isArray(d?.sections) ? d.sections : [];
+  }
+
+  function renderDoc() {
+    const d = curDoc;
+    if (!d) return;
+    const kindName = KIND_LABEL[d.kind] || "정리";
+    const body = $("docBody");
+
+    body.replaceChildren(
+      el("span", { class: "tag", text: kindName }),
+      el("h2", { text: d.title || kindName }),
+      el("p", { class: "doc-sub", text: [d.subject, shortDate(d.created_at)].filter(Boolean).join(" · ") }),
+      ...docSections(d).map((sec) => el("section", null,
+        el("h3", { text: sec.heading || "" }),
+        // 요약: 요점 · 용어 · 공식
+        Array.isArray(sec.points) && sec.points.length
+          ? el("ul", null, ...sec.points.map((t) => el("li", { text: String(t) }))) : null,
+        Array.isArray(sec.terms) && sec.terms.length
+          ? el("ul", { class: "terms" }, ...sec.terms.map((t) =>
+              el("li", null, el("b", { text: (t?.term || "") + ":" }), el("span", { text: t?.meaning || "" })))) : null,
+        Array.isArray(sec.formulas) && sec.formulas.length
+          ? el("ul", { class: "formulas" }, ...sec.formulas.map((t) => el("li", { text: String(t) }))) : null,
+        // 설명: 본문 · 왜 · 예시 · 헷갈리는 지점
+        sec.body ? el("p", { text: String(sec.body) }) : null,
+        sec.why ? el("p", null, el("b", { text: "왜 그런가: " }), el("span", { text: String(sec.why) })) : null,
+        sec.example ? el("p", null, el("b", { text: "예시: " }), el("span", { text: String(sec.example) })) : null,
+        sec.pitfall ? el("p", null, el("b", { text: "헷갈리기 쉬운 곳: " }), el("span", { text: String(sec.pitfall) })) : null,
+        sec.source ? el("p", { class: "src", text: sec.source }) : null))
+    );
+    renderMath(body);
+  }
+
+  /** 텍스트 파일·공유용 본문 */
+  function docText() {
+    const d = curDoc;
+    if (!d) return "";
+    const out = [d.title || "", d.subject || "", ""];
+    for (const sec of docSections(d)) {
+      out.push("# " + (sec.heading || ""));
+      for (const t of sec.points || []) out.push("- " + t);
+      for (const t of sec.terms || []) out.push(`- ${t?.term || ""}: ${t?.meaning || ""}`);
+      for (const t of sec.formulas || []) out.push("- " + t);
+      if (sec.body) out.push(sec.body);
+      if (sec.why) out.push("왜 그런가: " + sec.why);
+      if (sec.example) out.push("예시: " + sec.example);
+      if (sec.pitfall) out.push("헷갈리기 쉬운 곳: " + sec.pitfall);
+      if (sec.source) out.push("(" + sec.source + ")");
+      out.push("");
+    }
+    return out.join("\n");
+  }
+
+  /** 시험지면 풀기 화면, 요약·설명이면 읽기 화면 */
+  function openResult(id) {
+    const d = exams.find((x) => x.id === id);
+    if (isDoc(d)) openDoc(id); else openExam(id);
   }
 
   function openExam(id) {
@@ -1089,17 +1249,20 @@
         live ? el("div", { class: "bar" + (r.status === "pending" ? " wait" : "") }, el("i", { style: `width:${progressPct(r)}%` })) : null);
     }));
 
-    $("examHead").textContent = exams.length ? `내 시험지 · ${exams.length}` : "내 시험지";
+    $("examHead").textContent = exams.length ? `내 자료 · ${exams.length}` : "내 자료";
     const cards = exams.map((x) => {
       const req = ownRequest(x.id);
       const cur = x.id === curExamId;
+      const doc = isDoc(x);
+      const kindName = KIND_LABEL[x.kind] || "시험지";
+      const amount = doc ? `${docSections(x).length}항목` : `${(x.questions || []).length}문항`;
       return el("li", { class: "ex" + (cur ? " cur" : ""), style: `--c:${subjectColor(x.subject || x.title)}` },
-        el("button", { type: "button", class: "ex-open", onclick: () => openExam(x.id), "aria-label": (x.title || "시험지") + " 풀기" },
-          el("span", { class: "sub", text: [x.subject, shortDate(x.created_at)].filter(Boolean).join(" · ") || "시험지" }),
-          el("span", { class: "ex-t", text: x.title || "시험지" }),
+        el("button", { type: "button", class: "ex-open", onclick: () => (doc ? openDoc(x.id) : openExam(x.id)), "aria-label": (x.title || kindName) + (doc ? " 열기" : " 풀기") },
+          el("span", { class: "sub", text: [doc ? kindName : x.subject, shortDate(x.created_at)].filter(Boolean).join(" · ") || kindName }),
+          el("span", { class: "ex-t", text: x.title || kindName }),
           el("span", { class: "meta" },
-            el("span", { text: `${(x.questions || []).length}문항` + (req ? "" : " · 받은 시험지") }),
-            el("span", { class: "go-tag", text: cur ? "보는 중" : "풀기 →" }))),
+            el("span", { text: amount + (req ? "" : ` · 받은 ${kindName}`) }),
+            el("span", { class: "go-tag", text: cur ? "보는 중" : doc ? "읽기 →" : "풀기 →" }))),
         el("span", { class: "acts" },
           req?.reusable ? retryButton(req, "새 문제로 다시") : null,
           req ? confirmButton("삭제", "정말 삭제?", () => deleteExam(x)) : confirmButton("목록에서 빼기", "정말 뺄까요?", () => deleteExam(x))));
@@ -1841,6 +2004,27 @@
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
+  /* ---------- 요약 · 설명 화면 버튼 ---------- */
+  $("docPrint").addEventListener("click", () => window.print());
+  $("docShare").addEventListener("click", async () => {
+    if (!curDoc) return;
+    const url = examLink(curDoc.id);
+    const kindName = KIND_LABEL[curDoc.kind] || "정리";
+    if (inApp) { await native("share", { url, title: curDoc.title || ("기추리 " + kindName) }); return; }
+    try { await navigator.clipboard.writeText(url); setStatus(`${kindName} 링크를 복사했어요. 받은 사람은 이 링크로만 열 수 있어요.`); }
+    catch (e) { setStatus("복사하지 못했어요. 이 주소를 직접 복사하세요: " + url); }
+  });
+  $("docSave").addEventListener("click", () => {
+    if (!curDoc) return;
+    const kindName = KIND_LABEL[curDoc.kind] || "정리";
+    const name = (curDoc.title || ("기추리 " + kindName)).replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 80) + ".txt";
+    if (inApp) { native("share", { text: docText(), filename: name }); return; }
+    const url = URL.createObjectURL(new Blob(["\ufeff" + docText()], { type: "text/plain;charset=utf-8" }));
+    const a = el("a", { href: url, download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
   document.addEventListener("visibilitychange", async () => {
     if (document.hidden) { if (syncTimer) pushSync(); return; }
     await pullSync(); // 다른 기기에서 바뀐 것 가져오기
@@ -1850,12 +2034,12 @@
 
   /* ---------- 화면 (출제하기 / 문제집 / 시험지 / 오답노트) ----------
      주소의 #make #book #exam #wrong 으로 화면을 바꿔서 뒤로 가기가 그대로 동작 */
-  const VIEWS = ["make", "book", "exam", "wrong"];
+  const VIEWS = ["make", "book", "exam", "wrong", "doc"];
   function show(name) {
     view = name;
     document.body.dataset.view = name;
     document.querySelectorAll(".view").forEach((v) => { v.hidden = v.dataset.view !== name; });
-    const tab = name === "exam" ? examBack : name;
+    const tab = name === "exam" ? examBack : name === "doc" ? "book" : name;
     document.querySelectorAll(".tab").forEach((t) => {
       if (t.dataset.tab === tab) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
     });
@@ -1879,7 +2063,7 @@
   });
 
   // 출제 조건: 바꿀 때마다 보내기 카드 요약을 고침. '자세히'는 펼친 상태를 기억
-  $("condStep").addEventListener("change", renderSend);
+  $("condStep").addEventListener("change", () => { applyKindUI(); renderSend(); });
   $("condStep").addEventListener("input", renderSend);
   const more = $("more");
   more.open = load("gichul.more", true) !== false; // 기본은 펼침, 접어 두면 기억
@@ -1890,6 +2074,7 @@
   if (curExamId === NOTE_ID) examBack = "wrong";
   renderAll();
   if (state.timer) ensureTick(); // 시험 모드 중에 새로고침했으면 이어서 (시간이 지났으면 바로 채점)
+  applyKindUI(); // 출력 종류에 맞는 조건 칸만 보이게
   renderFiles();
   restoreLibrary(); // 이 기기 자료함에 보관한 자료 불러오기
   renderLib();

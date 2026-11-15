@@ -96,9 +96,27 @@
         </div>
 
         <div class="step" id="condStep">
-          <div class="step-h"><span class="no">2</span><h3>출제 조건</h3><span class="state">기본값 그대로 보내도 돼요</span></div>
+          <div class="step-h"><span class="no">2</span><h3 id="condTitle">출제 조건</h3><span class="state">기본값 그대로 보내도 돼요</span></div>
           <div class="cond">
             <div class="field">
+              <span class="lbl">무엇을 만들까요</span>
+              <div class="seg" role="radiogroup" aria-label="무엇을 만들까요">
+                <label><input type="radio" name="kind" id="k-exam" value="exam" checked><span>시험지</span></label>
+                <label><input type="radio" name="kind" id="k-summary" value="summary"><span>요약</span></label>
+                <label><input type="radio" name="kind" id="k-explain" value="explain"><span>설명</span></label>
+              </div>
+              <small class="hint" id="kindHint">자료에서 나올 만한 문제를 뽑아요</small>
+            </div>
+            <div class="field" id="lengthField" hidden>
+              <span class="lbl">분량</span>
+              <div class="seg" role="radiogroup" aria-label="분량">
+                <label><input type="radio" name="length" id="len-s" value="short"><span>짧게</span></label>
+                <label><input type="radio" name="length" id="len-m" value="normal" checked><span>보통</span></label>
+                <label><input type="radio" name="length" id="len-l" value="long"><span>자세히</span></label>
+              </div>
+              <small class="hint" id="lengthHint">자료가 길면 '자세히'는 시간이 더 걸려요</small>
+            </div>
+            <div class="field" id="countField">
               <span class="lbl">문항 수</span>
               <div class="seg" role="radiogroup" aria-label="문항 수">
                 <label><input type="radio" name="count" id="c5" value="5"><span class="num">5</span></label>
@@ -107,7 +125,7 @@
                 <label><input type="radio" name="count" id="c20" value="20"><span class="num">20</span></label>
               </div>
             </div>
-            <div class="field">
+            <div class="field" id="typeField">
               <span class="lbl">문제 유형</span>
               <div class="seg" aria-label="문제 유형">
                 <label><input type="checkbox" name="type" id="t-mc" value="mc" checked><span>객관식 5지선다</span></label>
@@ -116,7 +134,7 @@
                 <label><input type="checkbox" name="type" id="t-essay" value="essay"><span>서술형</span></label>
               </div>
             </div>
-            <div class="field">
+            <div class="field" id="levelField">
               <span class="lbl">난이도 <small>여러 개 고르면 섞어서</small></span>
               <div class="seg" aria-label="난이도">
                 <label><input type="checkbox" name="level" id="l1" value="기본 개념 확인"><span>기본</span></label>
@@ -169,11 +187,11 @@
         <h3><span class="no">3</span>요청 보내기</h3>
         <dl class="summary">
           <dt>자료</dt><dd id="sumFiles">아직 없음</dd>
-          <dt>문항</dt><dd id="sumCount"></dd>
-          <dt>난이도</dt><dd id="sumLevel"></dd>
+          <dt id="sumCountDt">문항</dt><dd id="sumCount"></dd>
+          <dt id="sumLevelDt">난이도</dt><dd id="sumLevel"></dd>
         </dl>
         <button class="go" id="go" type="button" disabled>출제 요청 보내기</button>
-        <p class="hint">누르면 1~2분 뒤 <b>문제집</b>에 시험지가 올라와요</p>
+        <p class="hint" id="goHint">누르면 1~2분 뒤 <b>문제집</b>에 시험지가 올라와요</p>
         <ol class="flow" id="flow" aria-label="진행 단계"><li>자료 읽기</li><li>요청 보내기</li><li>출제 중</li><li>문제집 도착</li></ol>
         <p class="status" id="status" aria-live="polite">PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.</p>
         <p class="quota" id="quota" hidden></p>
@@ -212,6 +230,17 @@
           <button class="link save-txt" id="save" type="button">텍스트 파일로 저장</button>
         </div>
       </aside>
+    </div>
+  </section>
+
+  <!-- 요약 · 설명 (문항이 없는 결과) -->
+  <section class="view" id="view-doc" data-view="doc" aria-label="요약·설명" hidden>
+    <a class="back" id="docBack" href="#book">← 문제집</a>
+    <article class="doc" id="docBody"></article>
+    <div class="doc-actions">
+      <button class="btn" id="docPrint" type="button">인쇄 · PDF 저장</button>
+      <button class="btn" id="docShare" type="button">링크 복사</button>
+      <button class="link save-txt" id="docSave" type="button">텍스트 파일로 저장</button>
     </div>
   </section>
 

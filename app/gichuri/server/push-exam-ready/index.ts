@@ -61,20 +61,24 @@ async function accessToken(account: Record<string, string>): Promise<string> {
   return cachedToken.value;
 }
 
+/** 무엇을 만든 요청인지 (시험지 · 요약 · 설명) */
+const KIND_NAME: Record<string, string> = { exam: "시험지", summary: "요약", explain: "설명" };
+
 /** 알림 문구. 사이트의 완료 알림과 같은 말투로. */
 function message(record: Record<string, unknown>) {
   const ok = record.status === "done";
   const regen = record.regen_exam != null;
+  const kind = KIND_NAME[String(record.kind ?? "exam")] ?? "시험지";
   const name = (record.subject as string) ||
     ((record.files as string[] | null) ?? []).join(", ") ||
-    "요청한 시험지";
+    ("요청한 " + kind);
   if (!ok) {
-    return { title: "출제에 실패했어요", body: `"${name}" 출제에 실패했어요. 문제집에서 다시 시도할 수 있어요.` };
+    return { title: `${kind}을(를) 만들지 못했어요`, body: `"${name}" ${kind} 만들기에 실패했어요. 문제집에서 다시 시도할 수 있어요.` };
   }
   if (regen) {
     return { title: "문제를 바꿨어요", body: `${Number(record.regen_idx ?? 0) + 1}번 문제를 새 문제로 바꿨어요.` };
   }
-  return { title: "시험지가 완성됐어요", body: `"${name}" 시험지를 문제집에서 열어 보세요.` };
+  return { title: `${kind}이(가) 완성됐어요`, body: `"${name}" ${kind}을(를) 문제집에서 열어 보세요.` };
 }
 
 Deno.serve(async (req) => {
