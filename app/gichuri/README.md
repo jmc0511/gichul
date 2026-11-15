@@ -20,7 +20,7 @@ lib/web_shell.dart     웹뷰 한 장, 이동 제한, 안전영역, 알림 등�
 lib/native_actions.dart 위 표의 핸들러 구현
 lib/push.dart          시험지 완성 알림(FCM) + 기기 등록
 lib/offline_view.dart  인터넷이 없을 때 / 뜨는 동안
-server/push-exam-ready/ 알림을 보내는 Supabase Edge Function
+(Edge Function 은 저장소 루트의 supabase/functions/push-exam-ready/ 로 옮김)
 tool/                  아이콘·Xcode·애플 키 도우미
 ```
 
