@@ -994,8 +994,11 @@
     renderSheet();
   }
 
-  function retryButton(r, label) {
-    const b = el("button", { type: "button", class: "link retry", text: label, title: "자료를 다시 올리지 않고, 같은 범위·같은 조건으로 다른 문제를 받아요" });
+  function retryButton(r, label, kind = "exam") {
+    const title = kind === "exam"
+      ? "자료를 다시 올리지 않고, 같은 범위·같은 조건으로 다른 문제를 받아요"
+      : `자료를 다시 올리지 않고, 같은 범위·같은 조건으로 ${KIND_LABEL[kind]}을(를) 새로 받아요`;
+    const b = el("button", { type: "button", class: "link retry", text: label, title });
     b.addEventListener("click", () => retryRequest(r, b));
     return b;
   }
@@ -1299,7 +1302,7 @@
           el("span", { class: "t", title: name, text: (r.retry_of ? "↻ " : "") + name }),
           el("span", { class: "s", text: when(r.created_at) + (r.status === "error" && r.error ? " · " + r.error : "") })),
         el("span", { class: "pill " + (r.status || "pending"), text: (r.status === "working" && r.progress) || STATUS[r.status] || "대기 중" }),
-        el("span", { class: "acts" }, r.status === "error" && r.reusable && r.regen_exam == null ? retryButton(r, "다시 시도") : null, action),
+        el("span", { class: "acts" }, r.status === "error" && r.reusable && r.regen_exam == null ? retryButton(r, "다시 시도", r.kind || "exam") : null, action),
         live ? el("div", { class: "bar" + (r.status === "pending" ? " wait" : "") }, el("i", { style: `width:${progressPct(r)}%` })) : null);
     }));
 
@@ -1318,7 +1321,7 @@
             el("span", { text: amount + (req ? "" : ` · 받은 ${kindName}`) }),
             el("span", { class: "go-tag", text: cur ? "보는 중" : doc ? "읽기 →" : "풀기 →" }))),
         el("span", { class: "acts" },
-          req?.reusable ? retryButton(req, "새 문제로 다시") : null,
+          req?.reusable ? retryButton(req, doc ? `${kindName} 다시 만들기` : "새 문제로 다시", x.kind || "exam") : null,
           req ? confirmButton("삭제", "정말 삭제?", () => deleteExam(x)) : confirmButton("목록에서 빼기", "정말 뺄까요?", () => deleteExam(x))));
     });
     if (!exams.length) {
