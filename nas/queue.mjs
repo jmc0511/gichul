@@ -37,7 +37,7 @@ export async function pending() {
 export async function claim(id) {
   const got = await call("PATCH", `/requests?id=eq.${id}&status=eq.pending`, { status: "working", progress: "자료 읽는 중", started_at: new Date().toISOString() });
   if (!got.length) return null;
-  const [row] = await call("GET", `/requests?id=eq.${id}&select=instructions,material,images,retry_of,regen_exam,regen_idx`);
+  const [row] = await call("GET", `/requests?id=eq.${id}&select=instructions,material,images,retry_of,regen_exam,regen_idx,kind`);
   return row;
 }
 
@@ -163,8 +163,17 @@ export async function stillWanted(id) {
   return rows.length > 0;
 }
 
-export async function finish(id, exam) {
-  const [saved] = await call("POST", "/exams", { request_id: id, title: String(exam.title || "예상 기출문제"), subject: String(exam.subject || ""), questions: exam.questions });
+export async function finish(id, exam, kind = "exam") {
+  // 요약·설명은 문항이 없다. questions 는 not null 이라 빈 배열을 넣고 본문은 sections 에 담는다.
+  const body = kind === "exam"
+    ? { questions: exam.questions, sections: null }
+    : { questions: [], sections: exam.sections };
+  const [saved] = await call("POST", "/exams", {
+    request_id: id, kind,
+    title: String(exam.title || (kind === "summary" ? "요약" : kind === "explain" ? "설명" : "예상 기출문제")),
+    subject: String(exam.subject || ""),
+    ...body
+  });
   // 자료(material)는 "같은 자료로 다시 출제"를 위해 남겨 둠 → 14일 뒤 purge_old_requests 가 비움
   await call("PATCH", `/requests?id=eq.${id}`, { status: "done", exam_id: saved.id, progress: null, finished_at: new Date().toISOString() });
   return saved.id;

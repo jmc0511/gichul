@@ -11,7 +11,13 @@ const INTERVAL = (parseInt(process.env.POLL_SECONDS, 10) || 30) * 1000;
 const MAX_PARALLEL = parseInt(process.env.MAX_PARALLEL, 10) || 3;
 const MODEL = process.env.CLAUDE_MODEL || "";
 const RUN_TIMEOUT = 15 * 60 * 1000;
-const RULES = readFileSync(new URL("./PROMPT.md", import.meta.url), "utf8");
+// 출력 종류마다 규칙이 다르다 (시험지 · 요약 · 설명)
+const RULES = {
+  exam: readFileSync(new URL("./PROMPT-exam.md", import.meta.url), "utf8"),
+  summary: readFileSync(new URL("./PROMPT-summary.md", import.meta.url), "utf8"),
+  explain: readFileSync(new URL("./PROMPT-explain.md", import.meta.url), "utf8")
+};
+const KIND_NAME = { exam: "시험지", summary: "요약", explain: "설명" };
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const running = new Set();
 const short = (id) => id.slice(0, 8);
@@ -58,13 +64,27 @@ function askClaude(content, onText, onSpawn, timeout = RUN_TIMEOUT) {
   });
 }
 
-function parseExam(raw) {
-  let s = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+function parseJson(raw) {
+  const s = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
   const a = s.indexOf("{"), b = s.lastIndexOf("}");
   if (a < 0 || b < a) throw new Error("JSON을 찾지 못함");
-  const exam = JSON.parse(s.slice(a, b + 1));
+  return JSON.parse(s.slice(a, b + 1));
+}
+
+function parseExam(raw) {
+  const exam = parseJson(raw);
   if (!Array.isArray(exam.questions) || !exam.questions.length) throw new Error("questions 가 비어 있음");
   return exam;
+}
+
+/** 요약·설명. 문항 대신 sections 를 받는다. */
+function parseDoc(raw) {
+  const doc = parseJson(raw);
+  if (!Array.isArray(doc.sections) || !doc.sections.length) throw new Error("sections 가 비어 있음");
+  // 빈 칸만 있는 항목은 버린다 (화면에 빈 제목만 남는 걸 막는다)
+  doc.sections = doc.sections.filter((x) => x && (x.heading || x.body || (x.points || []).length));
+  if (!doc.sections.length) throw new Error("sections 가 모두 비어 있음");
+  return doc;
 }
 
 /* ---------- 문제에 붙일 그림 ---------- */
@@ -157,6 +177,7 @@ async function handle(id) {
   const started = Date.now();
   // 사용자가 요청을 취소하면(행 삭제) Claude를 바로 멈춰 사용량을 아낌
   let cancelled = false, proc = null;
+  let kindLabel = "시험지"; // 실패 문구에 쓴다 (row 는 try 안에서만 보인다)
   const imgBufs = new Map();
   const cancel = () => { if (cancelled) return; cancelled = true; log(`[${short(id)}] 사용자가 취소함 → 중단`); proc?.kill("SIGTERM"); };
   const watcher = setInterval(() => { stillWanted(id).then((ok) => { if (!ok) cancel(); }).catch(() => {}); }, 5000);
@@ -164,9 +185,13 @@ async function handle(id) {
     const row = await claim(id);
     if (!row) return; // 다른 처리기가 이미 가져감
     const regen = row.regen_exam ? { examId: row.regen_exam, idx: row.regen_idx } : null;
-    const total = regen ? 1 : parseInt((row.instructions.match(/정확히\s*(\d+)\s*문항/) || [])[1], 10) || 0;
+    // 요약·설명은 문항을 다시 만드는 기능이 없으므로 regen 은 언제나 시험지다.
+    const kind = regen ? "exam" : (RULES[row.kind] ? row.kind : "exam");
+    const isExam = kind === "exam";
+    kindLabel = KIND_NAME[kind];
+    const total = isExam && !regen ? parseInt((row.instructions.match(/정확히\s*(\d+)\s*문항/) || [])[1], 10) || 0 : 0;
     await broadcast("req-" + id, "update", { status: "working", progress: "자료 읽는 중" });
-    log(`[${short(id)}] ${regen ? `문제 하나 다시 (${regen.idx + 1}번)` : `출제 시작 (${total || "?"}문항)`}`);
+    log(`[${short(id)}] ${regen ? `문제 하나 다시 (${regen.idx + 1}번)` : isExam ? `출제 시작 (${total || "?"}문항)` : `${KIND_NAME[kind]} 시작`}`);
 
     let retryNote = "";
     if (regen) {
@@ -196,25 +221,38 @@ async function handle(id) {
     }
     const nImg = content.length / 2;
     if (nImg) log(`[${short(id)}] 그림 ${nImg}장 함께 보냄`);
-    content.push({ type: "text", text: `${RULES}\n\n${row.instructions}${retryNote}\n\n[공부자료 원문]\n${row.material}${nImg ? `\n\n[첨부 이미지] 위에 자료 속 그림 ${nImg}장을 붙였습니다. 본문의 "[이 쪽의 그림: 첨부 이미지 #n]" 표시와 이미지 이름으로 어느 쪽 그림인지 알 수 있습니다.` : ""}\n\n[다시 한 번] 위 형식의 JSON 하나만 출력하세요.` });
+    content.push({ type: "text", text: `${RULES[kind]}\n\n${row.instructions}${retryNote}\n\n[공부자료 원문]\n${row.material}${nImg ? `\n\n[첨부 이미지] 위에 자료 속 그림 ${nImg}장을 붙였습니다. 본문의 "[이 쪽의 그림: 첨부 이미지 #n]" 표시와 이미지 이름으로 어느 쪽 그림인지 알 수 있습니다.` : ""}\n\n[다시 한 번] 위 형식의 JSON 하나만 출력하세요.` });
     let lastShown = 0, lastDb = 0, lastCount = -1;
     const onText = (text) => {
-      const n = (text.match(/"question"\s*:/g) || []).length;
+      // 시험지는 문항 수, 요약·설명은 항목(heading) 수를 센다
+      const n = (text.match(isExam ? /"question"\s*:/g : /"heading"\s*:/g) || []).length;
       if (n === lastCount) return;
       lastCount = n;
       const now = Date.now();
-      const label = total ? `문항 ${Math.min(n, total)}/${total} 작성 중` : `문항 ${n}개 작성 중`;
+      const label = !isExam ? `${KIND_NAME[kind]} ${n}항목 작성 중`
+        : total ? `문항 ${Math.min(n, total)}/${total} 작성 중` : `문항 ${n}개 작성 중`;
       if (now - lastShown > 800) { lastShown = now; broadcast("req-" + id, "update", { status: "working", progress: label }); }
       if (now - lastDb > 4000) { lastDb = now; setProgress(id, label).then((ok) => { if (!ok) cancel(); }).catch(() => {}); }
     };
 
     let exam, lastErr;
     for (let attempt = 1; attempt <= 2 && !exam && !cancelled; attempt++) {
-      try { exam = parseExam(await askClaude(content, onText, (p) => { proc = p; })); }
+      try {
+        const out = await askClaude(content, onText, (p) => { proc = p; });
+        exam = isExam ? parseExam(out) : parseDoc(out);
+      }
       catch (e) { lastErr = e; if (!cancelled) log(`[${short(id)}] ${attempt}번째 시도 실패: ${e.message}`); }
     }
     if (cancelled || !(await stillWanted(id))) { cancelled = true; return; }
     if (!exam) throw lastErr;
+
+    // 요약·설명은 그림을 붙이지 않는다(자료의 그림은 글로 설명하게 되어 있다). 바로 저장한다.
+    if (!isExam) {
+      const docId = await finish(id, exam, kind);
+      await broadcast("req-" + id, "update", { status: "done", exam_id: docId });
+      log(`[${short(id)}] 완료 (${KIND_NAME[kind]} ${exam.sections.length}항목, ${Math.round((Date.now() - started) / 1000)}초)`);
+      return;
+    }
 
     const target = regen ? { questions: exam.questions.slice(0, 1) } : exam;
     if (/\[그림 없이\]/.test(row.instructions)) {
@@ -244,7 +282,7 @@ async function handle(id) {
   } catch (e) {
     if (!cancelled) {
       log(`[${short(id)}] 실패: ${e.message}`);
-      await failReq(id, "출제 중 오류가 났어요. 다시 시도해 주세요.", e?.message).catch(() => {});
+      await failReq(id, `${kindLabel} 만드는 중 오류가 났어요. 다시 시도해 주세요.`, e?.message).catch(() => {});
       await broadcast("req-" + id, "update", { status: "error" });
     }
   } finally {
