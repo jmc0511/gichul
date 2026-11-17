@@ -283,6 +283,17 @@
   }
 
   /* ---------- 작은 DOM 도우미 ---------- */
+  /**
+   * 요소가 없으면 조용히 넘어간다.
+   * 서비스워커 캐시 때문에 예전 index.html 과 새 app.js 가 섞이면 요소가 없을 수 있는데,
+   * 그때 여기서 터지면 아래쪽 초기화(자료함 복원·로그인·목록)가 통째로 멈춘다.
+   */
+  function on(id, type, handler, options) {
+    const node = $(id);
+    if (!node) { console.warn(`[기추리] 화면에 ${id} 가 없어 건너뜀 (새로고침하면 사라지는 문제일 수 있어요)`); return; }
+    node.addEventListener(type, handler, options);
+  }
+
   function el(tag, attrs, ...kids) {
     const n = document.createElement(tag);
     if (attrs) for (const k in attrs) {
@@ -628,6 +639,8 @@
 
   /** 종류에 따라 조건 칸을 보이고 숨긴다 (시험지에만 있는 조건이 많다) */
   function applyKindUI() {
+    // 예전 HTML 이 캐시에서 오면 이 칸들이 없다. 그때는 시험지 기본 화면 그대로 둔다.
+    if (!$("condTitle") || !$("lengthField")) return;
     const kind = curKind();
     const isExam = kind === "exam";
     $("condTitle").textContent = isExam ? "출제 조건" : KIND_LABEL[kind] + " 조건";
@@ -2158,19 +2171,20 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   /* ---------- 쿠폰 입력 ---------- */
-  $("couponOpen").addEventListener("click", () => {
+  on("couponOpen", "click", () => {
     const form = $("couponForm");
+    if (!form) return;
     form.hidden = !form.hidden;
-    if (!form.hidden) $("couponCode").focus();
+    if (!form.hidden) $("couponCode")?.focus();
   });
-  $("couponForm").addEventListener("submit", (e) => {
+  on("couponForm", "submit", (e) => {
     e.preventDefault();
-    void submitCoupon($("couponCode").value.trim());
+    void submitCoupon($("couponCode")?.value.trim() || "");
   });
 
   /* ---------- 요약 · 설명 화면 버튼 ---------- */
-  $("docPrint").addEventListener("click", () => window.print());
-  $("docShare").addEventListener("click", async () => {
+  on("docPrint", "click", () => window.print());
+  on("docShare", "click", async () => {
     if (!curDoc) return;
     const url = examLink(curDoc.id);
     const kindName = KIND_LABEL[curDoc.kind] || "정리";
@@ -2178,7 +2192,7 @@
     try { await navigator.clipboard.writeText(url); setStatus(`${kindName} 링크를 복사했어요. 받은 사람은 이 링크로만 열 수 있어요.`); }
     catch (e) { setStatus("복사하지 못했어요. 이 주소를 직접 복사하세요: " + url); }
   });
-  $("docSave").addEventListener("click", () => {
+  on("docSave", "click", () => {
     if (!curDoc) return;
     const kindName = KIND_LABEL[curDoc.kind] || "정리";
     const name = (curDoc.title || ("기추리 " + kindName)).replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 80) + ".txt";
@@ -2227,8 +2241,8 @@
   });
 
   // 출제 조건: 바꿀 때마다 보내기 카드 요약을 고침. '자세히'는 펼친 상태를 기억
-  $("condStep").addEventListener("change", () => { applyKindUI(); renderSend(); });
-  $("condStep").addEventListener("input", renderSend);
+  on("condStep", "change", () => { applyKindUI(); renderSend(); });
+  on("condStep", "input", renderSend);
   const more = $("more");
   more.open = load("gichul.more", true) !== false; // 기본은 펼침, 접어 두면 기억
   more.addEventListener("toggle", () => { try { localStorage.setItem("gichul.more", JSON.stringify(more.open)); } catch (e) {} });
