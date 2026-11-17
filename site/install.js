@@ -1,5 +1,26 @@
-// 앱 안내: 아이폰·아이패드는 App Store, 안드로이드는 Play 스토어 + 서비스 워커 등록
+// 맨 위 띠 두 개(공지 · 앱 안내)와 서비스 워커 등록.
+// 앱 안내: 아이폰·아이패드는 App Store, 안드로이드는 Play 스토어
 // (2026-11-16 안드로이드 출시 전에는 안드로이드에 홈 화면 앱(PWA) 설치를 권했다. 이제 둘 다 스토어 앱으로 보낸다)
+/* ---------- 공지 ----------
+   내용을 바꿀 때는 index.html 의 글과 함께 아래 NOTICE_ID 도 바꾼다.
+   그래야 전에 닫은 사람에게도 새 공지가 다시 보인다. */
+(function () {
+  const NOTICE_ID = "team08";
+  const KEY = "gichul.noticeHide";
+  const bar = document.getElementById("noticeBar");
+  const close = document.getElementById("noticeClose");
+  if (!bar || !close) return;
+
+  let hidden = false;
+  try { hidden = localStorage.getItem(KEY) === NOTICE_ID; } catch (e) {}
+  if (!hidden) bar.hidden = false;
+
+  close.addEventListener("click", () => {
+    bar.hidden = true;
+    try { localStorage.setItem(KEY, NOTICE_ID); } catch (e) {}
+  });
+})();
+
 (function () {
   const inApp = /GichuriApp/.test(navigator.userAgent); // 앱(Flutter 웹뷰) 안에서 열린 경우
   if ("serviceWorker" in navigator && !inApp) {

@@ -562,3 +562,6 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .coupon-msg { margin: 6px 0 0; font-size: 12px; }
 .coupon-msg.ok { color: var(--ok, #2f855a); }
 .coupon-msg.no { color: var(--bad, #c53030); }
+
+/* 공지 바 — 앱 설치 안내와 구분되게 테두리 색만 다르게 */
+.notice-bar { border-color: color-mix(in srgb, var(--omr) 45%, var(--line)); }
