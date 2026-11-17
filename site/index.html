@@ -205,6 +205,15 @@
         <ol class="flow" id="flow" aria-label="진행 단계"><li>자료 읽기</li><li>요청 보내기</li><li>출제 중</li><li>문제집 도착</li></ol>
         <p class="status" id="status" aria-live="polite">PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.</p>
         <p class="quota" id="quota" hidden></p>
+        <div class="coupon" id="coupon" hidden>
+          <button class="link" id="couponOpen" type="button">쿠폰 코드가 있나요?</button>
+          <form class="coupon-in" id="couponForm" hidden>
+            <input type="text" id="couponCode" placeholder="예: GICHUL2026" autocomplete="off"
+                   inputmode="latin" maxlength="24" aria-label="쿠폰 코드">
+            <button class="btn" id="couponGo" type="submit">등록</button>
+          </form>
+          <p class="coupon-msg" id="couponMsg" hidden></p>
+        </div>
       </aside>
     </div>
   </section>

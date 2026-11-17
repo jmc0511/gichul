@@ -154,15 +154,60 @@
     return box;
   }
 
-  function render(s, reports, autos) {
+  /* ---------- 쿠폰 ---------- */
+  function couponBox(coupons) {
+    const rows = (coupons || []).map((c) => el("tr", null,
+      el("td", null, el("b", { text: c.code }), c.note ? el("div", { class: "detail", text: c.note }) : null),
+      el("td", { class: "num", text: `${c.grant_days}일` }),
+      el("td", { class: "num", text: `${c.used_count}${c.max_uses ? " / " + c.max_uses : ""}` }),
+      el("td", { class: "num", text: String(c.active_now) }),
+      el("td", { class: "num", text: c.expires_at ? when(c.expires_at) : "–" }),
+      el("td", null, el("button", {
+        type: "button", class: "btn", text: c.active ? "끄기" : "켜기",
+        onclick: async () => {
+          const { error } = await sb.rpc("admin_set_coupon", { p_code: c.code, p_active: !c.active });
+          if (error) alert("바꾸지 못했어요: " + error.message); else load();
+        }
+      }))));
+
+    const code = el("input", { type: "text", placeholder: "코드 (영문·숫자 4~24)", maxlength: "24", style: "text-transform:uppercase" });
+    const days = el("input", { type: "number", value: "30", min: "1", max: "3650", style: "width:5.5em" });
+    const uses = el("input", { type: "number", placeholder: "인원(비우면 무제한)", min: "1", style: "width:9em" });
+    const note = el("input", { type: "text", placeholder: "메모 (어디에 뿌렸는지)" });
+
+    const make = el("button", { type: "button", class: "btn", text: "만들기", onclick: async () => {
+      const { data, error } = await sb.rpc("admin_create_coupon", {
+        p_code: code.value.trim(),
+        p_grant_days: Number(days.value) || 30,
+        p_max_uses: uses.value ? Number(uses.value) : null,
+        p_note: note.value.trim() || null
+      });
+      if (error) { alert("만들지 못했어요: " + error.message); return; }
+      if (!data?.ok) {
+        alert({ bad_code: "코드는 영문·숫자 4~24자여야 해요.", duplicate: "이미 있는 코드예요.", not_admin: "관리자만 만들 수 있어요." }[data?.reason] || "만들지 못했어요.");
+        return;
+      }
+      code.value = ""; note.value = ""; uses.value = "";
+      load();
+    }});
+
+    return el("section", { class: "box" },
+      el("h2", null, "쿠폰 (무제한권)", el("small", { text: "개인 하루 한도만 풀림 · 전체 한도는 그대로" })),
+      el("div", { style: "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px" }, code, days, uses, note, make),
+      rows.length ? tableOf(["코드", "기간", "쓴 사람", "지금 유효", "코드 기한", ""], rows)
+                  : el("p", { class: "foot", text: "아직 만든 쿠폰이 없어요." }));
+  }
+
+  // 표 만들기는 render 안에만 있던 걸 밖으로 뺐다 (쿠폰 박스도 쓴다)
+  const tableOf = (heads, rows) => el("div", { class: "scroll" }, el("table", null,
+    el("thead", null, el("tr", null, ...heads.map((h) => el("th", { text: h })))),
+    el("tbody", null, ...rows)));
+
+  function render(s, reports, autos, coupons) {
     const t = s.today, u = s.usage;
     const storage = u.request_images.bytes + u.exam_figures.bytes;
     const days = s.days.map((d) => ({ ...d, day: String(d.day) }));
     const failures = s.failures || [];
-
-    const tableOf = (heads, rows) => el("div", { class: "scroll" }, el("table", null,
-      el("thead", null, el("tr", null, ...heads.map((h) => el("th", { text: h })))),
-      el("tbody", null, ...rows)));
 
     $("main").replaceChildren(el("div", { style: "display:flex;flex-direction:column;gap:12px" },
       el("div", { class: "cards" },
@@ -184,6 +229,7 @@
           el("p", { class: "foot", style: "font-size:13px;color:var(--ink)", text: s.limits ? `1인 하루 ${s.limits.per_ip_daily} · 동시 ${s.limits.per_ip_open} · 전체 하루 ${s.limits.total_daily}` : "–" }),
           el("h2", null, "오늘 많이 쓴 사람", el("small", { text: "IP 일부 가림" })),
           (s.top_ips || []).length ? tableOf(["IP", "요청"], s.top_ips.map((r) => el("tr", null, el("td", { class: "num", text: r.ip }), el("td", { class: "num", text: String(r.n) })))) : el("p", { class: "foot", text: "오늘 요청 없음" }))),
+      couponBox(coupons || []),
       reportsBox(reports || []),
       autoBox(autos || []),
       el("section", { class: "box" }, el("h2", null, "최근 실패", el("small", { text: "최근 15개" })),
@@ -212,8 +258,10 @@
       message(/not_admin/.test(error.message) ? `${session.user.email} 계정은 관리자로 등록돼 있지 않아요.` : "불러오지 못했어요: " + error.message);
       return;
     }
-    const [rep, auto] = await Promise.all([sb.rpc("admin_reports"), sb.rpc("admin_auto_reports")]);
-    render(data, rep.error ? [] : rep.data, auto.error ? [] : auto.data);
+    const [rep, auto, cou] = await Promise.all([
+      sb.rpc("admin_reports"), sb.rpc("admin_auto_reports"), sb.rpc("admin_coupons")
+    ]);
+    render(data, rep.error ? [] : rep.data, auto.error ? [] : auto.data, cou.error ? [] : cou.data);
   }
 
   $("reload").addEventListener("click", load);

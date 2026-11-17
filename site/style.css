@@ -551,3 +551,14 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
   .doc-actions, .back { display: none; }
 }
 .foot-links a[hidden] + span { display: none; } /* 숨긴 링크 뒤 구분점도 숨김 */
+
+/* 쿠폰 코드 */
+.coupon { margin: 6px 0 0; text-align: center; }
+.coupon .link { font-size: 12px; color: var(--muted); }
+.coupon-in { display: flex; gap: 6px; margin-top: 6px; }
+.coupon-in input { min-width: 0; flex: 1; padding: 7px 10px; font-size: 13px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: inherit;
+  text-transform: uppercase; }
+.coupon-msg { margin: 6px 0 0; font-size: 12px; }
+.coupon-msg.ok { color: var(--ok, #2f855a); }
+.coupon-msg.no { color: var(--bad, #c53030); }

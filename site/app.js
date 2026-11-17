@@ -699,13 +699,78 @@
     limit_site: "오늘은 사이트 전체 요청이 마감됐어요. 밤 12시가 지나면 다시 열려요."
   };
   function quotaBlock() {
-    if (!quota || quota.unlimited) return null;
+    if (!quota) return null;
+    // 쿠폰은 개인 한도만 푼다. 사이트 전체와 동시 요청은 그대로 막힌다(서버 requests_guard 와 같은 규칙).
+    if (quota.coupon_until) {
+      if (quota.site_full) return LIMIT_MSG.limit_site;
+      if (quota.open >= quota.open_limit) return LIMIT_MSG.limit_open;
+      return null;
+    }
+    if (quota.unlimited) return null;
     if (quota.site_full) return LIMIT_MSG.limit_site;
     if (quota.used >= quota.limit) return quota.guest ? LIMIT_MSG.limit_guest : LIMIT_MSG.limit_daily;
     if (quota.ip_limit != null && quota.ip_used >= quota.ip_limit) return LIMIT_MSG.limit_daily;
     if (quota.open >= quota.open_limit) return LIMIT_MSG.limit_open;
     return null;
   }
+  /* ---------- 쿠폰 코드 ---------- */
+  const COUPON_MSG = {
+    login_required: "쿠폰은 구글 로그인 후에 등록할 수 있어요.",
+    empty: "코드를 입력해 주세요.",
+    not_found: "없는 코드예요. 대소문자는 가리지 않으니 글자만 확인해 주세요.",
+    expired: "기한이 지난 코드예요.",
+    used_up: "이 코드는 인원이 다 찼어요.",
+    already: "이미 등록한 코드예요."
+  };
+
+  /** 남은 기간을 사람이 읽는 말로 */
+  function couponLeft(until) {
+    const ms = new Date(until).getTime() - Date.now();
+    if (ms <= 0) return "오늘까지";
+    const days = Math.ceil(ms / 864e5);
+    return days > 1 ? `${days}일 남음` : "오늘까지";
+  }
+
+  function renderCoupon() {
+    const box = $("coupon");
+    if (!box) return;
+    // 관리자는 이미 무제한이라 필요 없다. 쿠폰을 이미 쓰고 있으면 입력칸을 접어 둔다.
+    const admin = quota?.unlimited && !quota?.coupon_until;
+    box.hidden = !sb || admin;
+    if (quota?.coupon_until) {
+      $("couponForm").hidden = true;
+      $("couponOpen").textContent = "쿠폰 코드 더 넣기";
+    }
+  }
+
+  async function submitCoupon(code) {
+    const msg = $("couponMsg");
+    const show = (text, ok) => {
+      msg.hidden = false;
+      msg.textContent = text;
+      msg.classList.toggle("ok", !!ok);
+      msg.classList.toggle("no", !ok);
+    };
+
+    if (!user || user.is_anonymous) { show(COUPON_MSG.login_required, false); return; }
+
+    const { data, error } = await sb.rpc("redeem_coupon", { p_code: code });
+    if (error) { show("등록하지 못했어요. 잠시 뒤 다시 시도해 주세요.", false); return; }
+
+    if (data?.ok) {
+      show(`무제한권이 등록됐어요! ${couponLeft(data.until)}`, true);
+      $("couponCode").value = "";
+      $("couponForm").hidden = true;
+      await loadQuota();
+      return;
+    }
+    if (data?.reason === "already" && data.until) {
+      show(`${COUPON_MSG.already} ${couponLeft(data.until)}`, false);
+      return;
+    }
+    show(COUPON_MSG[data?.reason] || "등록하지 못했어요.", false);
+  }
+
   async function loadQuota() {
     if (!sb) return;
     const { data, error } = await sb.rpc("my_quota");
@@ -714,10 +779,12 @@
     const q = $("quota");
     q.hidden = false;
     const left = Math.max(0, quota.limit - quota.used);
-    q.textContent = quota.unlimited ? "관리자 · 요청 횟수 제한 없음"
+    q.textContent = quota.coupon_until ? `무제한권 사용 중 · ${couponLeft(quota.coupon_until)} (오늘 ${quota.used}번 보냄)`
+      : quota.unlimited ? "관리자 · 요청 횟수 제한 없음"
       : quota.guest ? `로그인 없이 오늘 ${left}/${quota.limit}번 남았어요 · 로그인하면 더 보낼 수 있어요`
       : `오늘 남은 요청 ${left}/${quota.limit} · 매일 0시 초기화`;
     q.classList.toggle("out", !!quotaBlock());
+    renderCoupon();
     renderFiles();
   }
 
@@ -2090,6 +2157,17 @@
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
+  /* ---------- 쿠폰 입력 ---------- */
+  $("couponOpen").addEventListener("click", () => {
+    const form = $("couponForm");
+    form.hidden = !form.hidden;
+    if (!form.hidden) $("couponCode").focus();
+  });
+  $("couponForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    void submitCoupon($("couponCode").value.trim());
+  });
+
   /* ---------- 요약 · 설명 화면 버튼 ---------- */
   $("docPrint").addEventListener("click", () => window.print());
   $("docShare").addEventListener("click", async () => {
