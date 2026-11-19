@@ -2042,14 +2042,15 @@
         const has = /\$[^$]+\$|\\\(|\\\[/.test(v);
         preview.hidden = !has;
         if (!has) return;
-        preview.replaceChildren(el("span", { class: "math-preview-label", text: "수식 미리보기" }), el("div", { class: "math-preview-body", text: v }));
+        preview.replaceChildren(el("span", { class: "math-preview-label", text: "이렇게 보여요" }), el("div", { class: "math-preview-body", text: v }));
         renderMath(preview);
       };
       ta.addEventListener("input", () => {
         state.answers[i] = ta.value; persist(); autoGrow(ta);
         clearTimeout(pv); pv = setTimeout(updatePreview, 250);
       });
-      art.append(ta, ...mathPad(ta), ...inkPad(ta), preview);
+      // 미리보기는 답안칸 **바로 아래**에. 키패드·손글씨판을 그 위에 두면 화면 밖으로 밀려 안 보인다
+      art.append(ta, preview, ...mathPad(ta), ...inkPad(ta));
       updatePreview();
     }
     if (state.printKey || ((state.open[i] || state.graded) && !state.timer)) art.append(renderSol(q, i));

@@ -396,7 +396,7 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 /* 답안 수식 미리보기 */
 .math-preview { margin-top: 6px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 6px; font-family: var(--f-exam); display: flex; flex-direction: column; gap: 2px; }
 .math-preview-label { font-family: var(--f-ui); font-size: 11.5px; color: var(--muted); }
-.math-preview-body { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.math-preview-body { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; font-size: 16px; }
 /* 문제 그림 */
 .fig { margin: 4px 0 12px; }
 .fig-box { max-width: 560px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: #fff; }
