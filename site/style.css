@@ -600,6 +600,10 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .mathpad button:active { transform: translateY(1px); }
 @media print { .mathpad, .mathpad-toggle { display: none; } }
 
+/* 복습 알림 스위치 (앱에서만 보임) */
+.review-push { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 13px; cursor: pointer; }
+.review-push input { width: 18px; height: 18px; accent-color: var(--omr); }
+
 /* 시험 범위 고르기 */
 .file-acts { display: flex; align-items: center; gap: 8px; }
 .range-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 13px; }

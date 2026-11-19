@@ -1758,6 +1758,33 @@
     return true;
   }
 
+  /* 아침 복습 알림 끄기·켜기.
+     앱이 window.GICHURI_DEVICE 로 기기 토큰을 알려 줄 때만 보인다 (사이트만으로는 어느 기기인지 모른다). */
+  let reviewPushOn = null;
+  async function loadReviewPush() {
+    const device = window.GICHURI_DEVICE;
+    if (!sb || !device) return;
+    const { data, error } = await sb.rpc("my_review_push", { p_device: device });
+    if (!error && typeof data === "boolean") { reviewPushOn = data; renderNotePage(); }
+  }
+  function reviewPushRow() {
+    const device = window.GICHURI_DEVICE;
+    if (!device || reviewPushOn == null) return null;
+    const cb = el("input", { type: "checkbox", id: "reviewPush" });
+    cb.checked = reviewPushOn;
+    cb.addEventListener("change", async () => {
+      const want = cb.checked;
+      cb.disabled = true;
+      const { data, error } = await sb.rpc("set_review_push", { p_device: device, p_on: want });
+      cb.disabled = false;
+      if (error || data === false) { cb.checked = !want; setStatus("바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", true); return; }
+      reviewPushOn = want;
+      setStatus(want ? "복습할 게 있는 날 아침에 알려 드릴게요." : "복습 알림을 껐어요.");
+    });
+    return el("label", { class: "review-push", for: "reviewPush" }, cb,
+      el("span", { text: "복습할 날 아침에 알림 받기" }));
+  }
+
   // 오답노트 화면: 오늘 복습·전체·다음 복습, 오답 모의고사, 과목 고르기, 문제 목록
   function renderNotePage() {
     const box = $("notePage");
@@ -1822,7 +1849,8 @@
         el("p", { class: "ans", text: "정답 " + ansText(q).slice(0, 160) }),
         w.from ? el("p", { class: "from", text: "출처 · " + w.from }) : null);
     }));
-    box.replaceChildren(stats, actions, ...(mock ? [mock] : []), ...(chips ? [el("p", { class: "section-t", text: "과목" }), chips] : []),
+    const push = reviewPushRow();
+    box.replaceChildren(stats, actions, ...(push ? [push] : []), ...(mock ? [mock] : []), ...(chips ? [el("p", { class: "section-t", text: "과목" }), chips] : []),
       el("p", { class: "section-t", text: `문제 ${pool.length}` + (pool.length > list.length ? ` · 앞의 ${list.length}개만 보여요` : "") }), items);
     renderMath(items);
   }
@@ -2707,6 +2735,9 @@
   restoreLibrary(); // 이 기기 자료함에 보관한 자료 불러오기
   renderLib();
   initAuth();
+  // 앱이 기기 토큰을 알려 주면(또는 이미 알려 줬으면) 복습 알림 스위치를 띄운다
+  loadReviewPush();
+  window.addEventListener("gichuri-device", loadReviewPush);
   {
     // 처음 화면: 주소에 정해져 있으면 그 화면, 시험 모드 중이었으면 시험지, 아니면 출제하기
     const h = location.hash.slice(1);

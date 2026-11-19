@@ -346,7 +346,22 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     await _web?.evaluateJavascript(
       source: "window.Notification && window.Notification._set && window.Notification._set('$state');",
     );
-    if (state == 'granted') await _registerPush();
+    if (state == 'granted') {
+      await _tellSiteDevice();
+      await _registerPush();
+    }
+  }
+
+  /// 이 기기의 알림 토큰을 사이트에 알려 준다.
+  /// 사이트는 이걸 알아야 '복습 알림 끄기' 스위치를 띄울 수 있다(set_review_push).
+  /// 등록(_registerPush)과 달리 기다리는 요청이 없어도 알려 준다.
+  Future<void> _tellSiteDevice() async {
+    final device = await Push.instance.token();
+    if (device == null || device.isEmpty) return;
+    await _web?.evaluateJavascript(
+      source: 'window.GICHURI_DEVICE = ${jsonEncode(device)};'
+          'window.dispatchEvent(new Event("gichuri-device"));',
+    );
   }
 
   /// 사이트의 Notification.requestPermission() 자리. 출제 요청을 보내는 순간 불린다.
@@ -418,10 +433,15 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     if (ok) _registered = mark;
   }
 
-  /// 알림을 눌러서 들어왔으면 그 시험지를 바로 띄운다.
+  /// 알림을 눌러서 들어왔으면 그 자리를 바로 띄운다.
+  /// 아침 복습 알림(kind: review)은 오답노트로, 시험지 완성은 그 시험지로.
   void _openFromNotification(Map<String, String> data) {
     final examId = data['exam_id'] ?? '';
-    final url = examId.isEmpty ? kHomeUrl : '$kExamUrlPrefix$examId';
+    final url = (data['kind'] == 'review')
+        ? kWrongUrl
+        : examId.isEmpty
+            ? kHomeUrl
+            : '$kExamUrlPrefix$examId';
     _web?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
   }
 }

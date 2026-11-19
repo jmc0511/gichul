@@ -11,6 +11,9 @@ const kHomeUrl = 'https://gichul.site/#make';
 /// 알림을 눌렀을 때 바로 열 시험지 주소 (사이트가 ?exam=… 를 알아본다).
 const kExamUrlPrefix = 'https://gichul.site/?exam=';
 
+/// 아침 복습 알림을 눌렀을 때 열 오답노트.
+const kWrongUrl = 'https://gichul.site/#wrong';
+
 /// 기본 User-Agent 끝에 붙는 표시. 사이트가 이걸 보고 앱 모드로 바뀐다.
 const kAppUserAgent = 'GichuriApp/1.0';
 
