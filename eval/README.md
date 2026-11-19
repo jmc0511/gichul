@@ -43,7 +43,10 @@ CLAUDE_MODEL= node eval/run.mjs          # --model 없이 CLI 기본 모델로
 만드는 방법은 둘:
 
 1. **`extract.mjs`** — 사이트와 같은 pdf.js 같은 버전으로 글자를 뽑는다. 그림은 안 뽑는다.
-2. **실제 요청에서 가져오기** — 사이트에서 한 번 보낸 뒤 14일 안에 `requests` 표의
+2. **`render-images.py`** — 글자가 없는 스캔·그림 위주 PDF용. 사이트와 같게 쪽을 그림으로 만든다
+   (폭 1100px·JPEG 75·최대 20장, 앞쪽부터). `pip install pymupdf` 필요.
+   `python3 eval/render-images.py <케이스이름> <파일.pdf>`
+3. **실제 요청에서 가져오기** — 사이트에서 한 번 보낸 뒤 14일 안에 `requests` 표의
    `material`·`instructions`·`images` 를 그대로 복사. 그림까지 똑같아서 가장 정확하다.
 
 좋은 평가셋은 **실제로 사람들이 올리는 자료**를 닮아야 한다. 글자 많은 PDF, 그림 위주 슬라이드,
