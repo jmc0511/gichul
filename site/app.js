@@ -394,11 +394,33 @@
 
   /* PPTX: 슬라이드 XML에서 글자를, 연결된 발표자 노트에서 메모를 읽는다 */
   const NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main";
+  const paraText = (p) => [...p.getElementsByTagNameNS(NS_A, "t")].map((t) => t.textContent).join("");
+  // 표 한 칸: 칸 안의 단락을 한 줄로 합치고, 표를 깨뜨리는 | 만 막는다
+  const cellText = (tc) => [...tc.getElementsByTagNameNS(NS_A, "p")].map(paraText).join(" ")
+    .replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+  // 슬라이드 속 표를 마크다운 표로. 첫 줄을 제목 줄로 쓴다.
+  // (칸 글자를 그냥 줄줄이 늘어놓으면 "RR은 선점형" 같은 가로세로 관계가 사라진다)
+  function tableText(tbl) {
+    const rows = [...tbl.getElementsByTagNameNS(NS_A, "tr")]
+      .map((tr) => [...tr.getElementsByTagNameNS(NS_A, "tc")].map(cellText));
+    if (!rows.some((r) => r.some((c) => c))) return "";
+    const width = Math.max(...rows.map((r) => r.length));
+    const line = (r) => "| " + Array.from({ length: width }, (_, i) => r[i] || "").join(" | ") + " |";
+    return [line(rows[0]), "| " + Array(width).fill("---").join(" | ") + " |", ...rows.slice(1).map(line)].join("\n");
+  }
+  // 슬라이드에 적힌 차례 그대로: 표는 표로, 나머지는 단락마다 한 줄로
   function xmlText(xml) {
     const doc = new DOMParser().parseFromString(xml, "application/xml");
-    return [...doc.getElementsByTagNameNS(NS_A, "p")]
-      .map((p) => [...p.getElementsByTagNameNS(NS_A, "t")].map((t) => t.textContent).join(""))
-      .filter((s) => s.trim()).join("\n");
+    const out = [];
+    (function walk(node) {
+      for (const node2 of node.children) {
+        const name = node2.namespaceURI === NS_A ? node2.localName : "";
+        if (name === "tbl") { const t = tableText(node2); if (t) out.push(t); }
+        else if (name === "p") { const t = paraText(node2); if (t.trim()) out.push(t); }
+        else walk(node2);
+      }
+    })(doc.documentElement);
+    return out.join("\n");
   }
   async function readPptx(file) {
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
