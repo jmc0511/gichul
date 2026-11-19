@@ -1779,6 +1779,7 @@
     return n % 2 === 1;
   }
   function insertTex(ta, tex, back) {
+    ta._edit?.(false);   // 그려진 모습을 보고 있었으면 글자 모드로 되돌린다 (숨은 칸에는 커서를 못 둔다)
     const a = ta.selectionStart, b = ta.selectionEnd, v = ta.value;
     const sel = v.slice(a, b);
     // 고른 글자가 있으면 그 자리에 넣는다 (x+1 을 고르고 √ 를 누르면 \sqrt{x+1})
@@ -2034,24 +2035,44 @@
     } else {
       const ta = el("textarea", { class: "write" + (q.type === "short" ? " short" : ""), id: "ans" + i, "aria-label": (i + 1) + "번 답안", placeholder: "답을 쓰세요 · 수식은 $x^2$ 처럼" });
       ta.value = typeof a === "string" ? a : "";
-      // 답에 수식($…$)이 있으면 아래에 렌더링된 미리보기를 보여줌
+      // 고치는 동안에는 글자 그대로 + 아래에 그려진 미리보기,
+      // 손을 떼면 칸 자체가 그려진 모습으로 바뀐다 ($\frac{2}{3}$ 날것이 계속 보이지 않게)
+      const hasMath = (v) => /\$[^$]+\$|\\\(|\\\[/.test(v);
       const preview = el("div", { class: "math-preview", "aria-live": "polite" });
+      const view = el("div", { class: "write-view" + (q.type === "short" ? " short" : ""), tabindex: "0",
+        role: "button", "aria-label": (i + 1) + "번 답안 · 눌러서 고치기", hidden: true });
       let pv = null;
       const updatePreview = () => {
-        const v = ta.value;
-        const has = /\$[^$]+\$|\\\(|\\\[/.test(v);
+        const has = hasMath(ta.value);
         preview.hidden = !has;
         if (!has) return;
-        preview.replaceChildren(el("span", { class: "math-preview-label", text: "이렇게 보여요" }), el("div", { class: "math-preview-body", text: v }));
+        preview.replaceChildren(el("span", { class: "math-preview-label", text: "이렇게 보여요" }), el("div", { class: "math-preview-body", text: ta.value }));
         renderMath(preview);
       };
+      const showView = () => {
+        if (!hasMath(ta.value)) return;        // 수식이 없으면 바꿀 이유가 없다
+        view.replaceChildren(el("div", { class: "math-preview-body", text: ta.value }));
+        renderMath(view);
+        view.hidden = false; ta.hidden = true; preview.hidden = true;
+      };
+      const showEdit = (focus) => {
+        view.hidden = true; ta.hidden = false;
+        updatePreview();
+        if (focus) { ta.focus(); const n = ta.value.length; ta.setSelectionRange(n, n); }
+      };
+      ta._edit = showEdit;                     // 키패드·손글씨가 글자 모드로 되돌릴 때 쓴다
+      view.addEventListener("click", () => showEdit(true));
+      view.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showEdit(true); } });
+      // 자판 버튼으로 포커스가 옮겨 간 것뿐일 수 있어, 한 박자 뒤에 확인한다
+      ta.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== ta) showView(); }, 0));
       ta.addEventListener("input", () => {
         state.answers[i] = ta.value; persist(); autoGrow(ta);
         clearTimeout(pv); pv = setTimeout(updatePreview, 250);
       });
       // 미리보기는 답안칸 **바로 아래**에. 키패드·손글씨판을 그 위에 두면 화면 밖으로 밀려 안 보인다
-      art.append(ta, preview, ...mathPad(ta), ...inkPad(ta));
+      art.append(ta, view, preview, ...mathPad(ta), ...inkPad(ta));
       updatePreview();
+      showView();   // 다시 그릴 때는 보던 상태 — 그려진 모습으로 시작한다
     }
     if (state.printKey || ((state.open[i] || state.graded) && !state.timer)) art.append(renderSol(q, i));
     const tools = [];

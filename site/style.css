@@ -278,6 +278,12 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .ox .choice { width: auto; grid-template-columns: auto; padding: 4px 18px; border: 1px solid var(--line); font-family: var(--f-num); font-weight: 600; }
 .write { width: 100%; min-height: 172px; border: 0; border-bottom: 1px solid var(--line); background: repeating-linear-gradient(transparent 0 27px, var(--line) 27px 28px); line-height: 28px; resize: vertical; overflow: hidden; font-family: var(--f-exam); font-size: inherit; padding: 0 4px; }
 .write.short { min-height: 60px; }
+/* 고치지 않는 동안 보이는 '그려진 답안칸'. 칸 모양은 .write 와 같게 맞춘다 */
+.write-view { width: 100%; min-height: 172px; border-bottom: 1px solid var(--line);
+  background: repeating-linear-gradient(transparent 0 27px, var(--line) 27px 28px);
+  line-height: 28px; font-family: var(--f-exam); padding: 0 4px; cursor: text; }
+.write-view.short { min-height: 60px; }
+.write-view:focus-visible { outline: 2px solid var(--omr); outline-offset: 2px; }
 /* 수식 */
 .katex { font-size: 1.06em; }
 .katex-display { margin: .5em 0; overflow-x: auto; overflow-y: hidden; padding-block: 2px; }
