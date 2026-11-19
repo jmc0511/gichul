@@ -1,7 +1,11 @@
-// 시험지 완성 알림을 보내는 Supabase Edge Function.
+// 앱 알림을 보내는 Supabase Edge Function. 두 가지를 보낸다.
 //
-// 부르는 쪽: Database Webhooks → public.requests 의 UPDATE
-// 하는 일 : 요청이 done·error 가 되면 그 요청을 기다리던 기기(push_watch)로 FCM 알림을 보낸다.
+// 1) 시험지 완성
+//    부르는 쪽: Database Webhooks → public.requests 의 UPDATE
+//    요청이 done·error 가 되면 그 요청을 기다리던 기기(push_watch)로 보낸다.
+// 2) 아침 복습 (body 에 { "review": true })
+//    부르는 쪽: NAS 처리기가 한국 시간 아침에 하루 한 번
+//    오답노트에 오늘 복습할 문제가 있는 사람에게 보낸다 (review_push_targets).
 //
 // 설정값 (대시보드 > Edge Functions > Secrets):
 //   FCM_SERVICE_ACCOUNT  Firebase 서비스 계정 키 JSON 통째로
@@ -103,6 +107,49 @@ Deno.serve(async (req) => {
     } catch (e) {
       return new Response(`FCM 설정 문제: ${e}`, { status: 500 });
     }
+  }
+
+  // 아침 복습 알림 (NAS 처리기가 하루 한 번 { review: true } 로 부른다).
+  // 오답노트는 '틀리면 오늘 → 1일 → 3일' 로 돌아오는데, 복습할 날이 됐다고 알려 줄 장치가 없었다.
+  if (payload?.review) {
+    const db = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    const { data: targets, error } = await db.rpc("review_push_targets");
+    if (error) return new Response(`db: ${error.message}`, { status: 500 });
+    if (!targets?.length) return new Response("skip: 오늘 복습할 사람 없음");
+
+    const account = JSON.parse(Deno.env.get("FCM_SERVICE_ACCOUNT")!);
+    const token = await accessToken(account);
+    const send = `https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`;
+    const dead: string[] = [];
+    const sent: string[] = [];
+    for (const t of targets as { device: string; due: number }[]) {
+      const res = await fetch(send, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            token: t.device,
+            notification: {
+              title: `오늘 복습할 문제 ${t.due}개`,
+              body: "틀렸던 문제를 다시 풀 때가 됐어요.",
+            },
+            // exam_id 를 비워 두면 앱이 첫 화면을 연다. kind 는 나중에 앱이 오답노트로 바로 보낼 때 쓴다
+            data: { kind: "review", due: String(t.due), exam_id: "" },
+            android: { priority: "HIGH", notification: { sound: "default" } },
+            apns: { headers: { "apns-priority": "10" }, payload: { aps: { sound: "default", badge: t.due } } },
+          },
+        }),
+      });
+      if (res.status === 404) dead.push(t.device);
+      else if (res.ok) sent.push(t.device);
+      else console.error("FCM(review)", res.status, await res.text());
+    }
+    if (dead.length) await db.from("push_devices").delete().in("device", dead);
+    if (sent.length) await db.rpc("review_push_sent", { p_devices: sent });
+    return new Response(`복습 알림 ${sent.length}/${targets.length}`);
   }
 
   const record = payload?.record as Record<string, unknown> | undefined;

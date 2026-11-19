@@ -101,7 +101,7 @@ button { cursor: pointer; }
 .drop small { color: var(--muted); font-size: 13px; }
 .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.files li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: var(--paper); }
+.files li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: var(--paper); }
 .files li.on { border-color: color-mix(in srgb, var(--omr) 55%, var(--line)); }
 .files li.off { border-style: dashed; }
 .files li.off .nm { color: var(--muted); }
@@ -599,6 +599,14 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .mathpad button:hover { background: var(--line); }
 .mathpad button:active { transform: translateY(1px); }
 @media print { .mathpad, .mathpad-toggle { display: none; } }
+
+/* 시험 범위 고르기 */
+.file-acts { display: flex; align-items: center; gap: 8px; }
+.range-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 13px; }
+.range-row input { width: 76px; min-height: 36px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card, var(--paper)); color: inherit; font: inherit; text-align: center; }
+.range-sep { color: var(--muted); }
+.range-unit { color: var(--muted); font-size: 12px; }
 
 /* 손글씨 수식판 */
 .inkpad-toggle { display: inline-block; margin: 6px 0 0 10px; font-size: 12px; }

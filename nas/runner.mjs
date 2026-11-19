@@ -310,6 +310,7 @@ const FIX_RULE = [
   "  유형(type)·배점(points)·source·area는 그대로 두고, figure 필드는 쓰지 마세요(원래 그림은 처리기가 다시 붙입니다).",
   "  지문이 딸린 문제면 passage·passage_id·passage_lead 를 **원래 값 그대로** 다시 써 주세요. 빠뜨리면 지문이 사라집니다.",
   "  mc는 보기 5개·answer 1~5, ox는 \"O\"/\"X\", short·essay는 모범답안 문자열. 고친 뒤 보기 5개를 자료와 다시 대조하세요.",
+  "  단답형이면 answer_alt(같은 뜻으로 인정할 다른 표기 1~3개)도 **원래 값 그대로** 다시 써 주세요. 빠뜨리면 비슷한 답이 틀린 걸로 처리됩니다.",
   "- 신고가 오해이고 문제가 맞으면 verdict는 \"ok\"로 하고 question은 쓰지 마세요.",
   "- summary에는 관리자가 읽을 한국어 한두 문장으로 무엇이 틀렸고 어떻게 고쳤는지(또는 왜 문제없는지) 쓰세요.",
   '형식: {"verdict":"fixed","summary":"…","question":{"type":"mc","question":"…","choices":["…","…","…","…","…"],"answer":2,"explanation":"…","source":"…","points":3}}',
@@ -487,10 +488,38 @@ async function checkInk() {
   } catch (e) { log("손글씨 확인 실패:", e.message); }
 }
 
+/* ---------- 아침 복습 알림 ----------
+   오답노트는 '틀리면 오늘 → 1일 뒤 → 3일 뒤' 로 돌아오는데, 복습할 날이 됐다고 알려 줄 장치가 없었다.
+   한국 시간 아침 8시가 지나면 하루 한 번 Edge Function 을 불러, 오늘 복습할 게 있는 사람에게만 보낸다.
+   (.env 에 PUSH_SECRET 이 없으면 아무것도 하지 않는다 — Supabase 대시보드에 넣어 둔 값과 같아야 한다) */
+const kst = () => new Date(Date.now() + 9 * 3600 * 1000);
+let reviewDoneOn = "";
+async function reviewPush() {
+  const secret = (process.env.PUSH_SECRET || "").trim();
+  if (!secret) return;
+  const today = kst().toISOString().slice(0, 10);
+  if (today === reviewDoneOn || kst().getUTCHours() < 8) return;
+  reviewDoneOn = today;
+  try {
+    const headers = { "Content-Type": "application/json", "x-push-secret": secret, apikey: SUPABASE_SECRET };
+    if (SUPABASE_SECRET.startsWith("eyJ")) headers.Authorization = "Bearer " + SUPABASE_SECRET;
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/push-exam-ready`, {
+      method: "POST", headers, body: JSON.stringify({ review: true })
+    });
+    const text = (await res.text()).slice(0, 120);
+    log(`아침 복습 알림: ${res.status} ${text}`);
+    if (!res.ok) reviewDoneOn = "";   // 실패했으면 다음 확인 때 다시 해 본다
+  } catch (e) {
+    reviewDoneOn = "";
+    log("복습 알림 실패:", e.message);
+  }
+}
+
 async function check() {
   if (checking) return;
   checking = true;
   housekeeping();
+  reviewPush();
   checkInk(); // 사람이 기다리는 일이라 출제보다 먼저
   try {
     if (Date.now() - lastStaleCheck > 5 * 60 * 1000) {

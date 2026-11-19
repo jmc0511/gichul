@@ -240,7 +240,7 @@
   function load(key, fallback) { try { const v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v; } catch (e) { return fallback; } }
   // 시험지를 바꾸거나 처음부터 다시 풀 때: 답·채점·시험 모드·순위를 모두 비움
   function resetRun() {
-    state.answers = {}; state.self = {}; state.open = {}; state.graded = false;
+    state.answers = {}; state.self = {}; state.auto = {}; state.open = {}; state.graded = false;
     state.timer = null; state.timerPick = false; state.elapsed = null; state.reportOpen = {}; state.rank = null;
     clearInterval(tickTimer);
   }
@@ -466,11 +466,57 @@
     bmp.close?.();
     return { pages: [""], visuals: [{ page: 0, score: 1000, render: () => blobToJpeg(file) }], kind: "image", scanned: true };
   }
+  /* 워드(.docx): mammoth 로 HTML 을 받아, 제목·목록·표만 남기고 글로 바꾼다.
+     쪽이라는 게 없는 형식이라 제목(h1·h2)마다 한 덩이로 끊는다. 제목이 없으면 길이로 끊는다.
+     (표는 PPTX 와 같게 마크다운 표로 — 칸 글자를 줄줄이 늘어놓으면 가로세로 관계가 사라진다) */
+  const DOCX_CHUNK = 1800;
+  function docxNodeText(node) {
+    const out = [];
+    const cell = (td) => String(td.textContent || "").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+    for (const elm of node.children) {
+      const tag = elm.tagName.toLowerCase();
+      if (tag === "table") {
+        const rows = [...elm.querySelectorAll("tr")].map((tr) => [...tr.children].map(cell));
+        if (!rows.some((r) => r.some(Boolean))) continue;
+        const w = Math.max(...rows.map((r) => r.length));
+        const line = (r) => "| " + Array.from({ length: w }, (_, k) => r[k] || "").join(" | ") + " |";
+        out.push([line(rows[0]), "| " + Array(w).fill("---").join(" | ") + " |", ...rows.slice(1).map(line)].join("\n"));
+      } else if (/^h[1-6]$/.test(tag)) {
+        out.push("\u0000" + "#".repeat(+tag[1]) + " " + String(elm.textContent || "").trim());  // \u0000 = 끊는 자리 표시
+      } else if (tag === "ul" || tag === "ol") {
+        out.push([...elm.children].map((li) => "- " + String(li.textContent || "").trim()).filter((x) => x !== "- ").join("\n"));
+      } else if (elm.children.length && !elm.textContent.trim()) {
+        continue;
+      } else {
+        const t = String(elm.textContent || "").replace(/[ \t]+/g, " ").trim();
+        if (t) out.push(t);
+      }
+    }
+    return out.filter(Boolean).join("\n\n");
+  }
+  async function readDocx(file) {
+    if (!window.mammoth) throw new Error("no mammoth");
+    const { value } = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
+    const box = document.createElement("div");
+    box.innerHTML = value;
+    const text = docxNodeText(box);
+    // 제목 자리(\u0000)에서 끊고, 그래도 긴 덩이는 길이로 한 번 더 끊는다
+    const pages = [];
+    for (const part of text.split("\u0000").map((x) => x.trim()).filter(Boolean)) {
+      if (part.length <= DOCX_CHUNK * 1.5) { pages.push(part); continue; }
+      for (let k = 0; k < part.length; k += DOCX_CHUNK) pages.push(part.slice(k, k + DOCX_CHUNK));
+    }
+    if (!pages.length) pages.push("");
+    return { pages, visuals: [], kind: "docx", scanned: pages.join("").length < 40 };
+  }
+
   // 자료 안에서 쪽을 부르는 이름
-  const pageName = (f, i) => f.kind === "pptx" ? `슬라이드 ${i + 1}` : f.kind === "image" ? "사진" : `p.${i + 1}`;
+  const pageName = (f, i) => f.kind === "pptx" ? `슬라이드 ${i + 1}` : f.kind === "image" ? "사진"
+    : f.kind === "docx" ? `${i + 1}번째 부분` : `p.${i + 1}`;
 
   const isPdf = (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
   const isPptx = (f) => /\.pptx$/i.test(f.name);
+  const isDocx = (f) => /\.docx$/i.test(f.name);
   const isImage = (f) => /^image\//i.test(f.type) || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name);
 
   /* ---------- 내 자료함 (이 기기의 IndexedDB에 보관) ----------
@@ -509,11 +555,28 @@
   // 체크했고 다 읽은 자료 = 이번 출제에 쓸 자료
   const activeFiles = () => state.files.filter((f) => f.checked && !f.loading && f.pages);
 
+  /* ---------- 시험 범위 ----------
+     책을 통째로 올리면 글자 없는 쪽이 20장 상한에 걸려 일부만 읽힌다.
+     학생은 시험 범위를 알고 있으니, 쪽을 직접 좁히면 그 안에서 촘촘히 읽는다.
+     f.from · f.to 는 사람이 세는 번호(1부터, 양끝 포함). 없으면 전체. */
+  const rangeFrom = (f) => Math.max(1, Math.min(f.from || 1, f.pages.length));
+  const rangeTo = (f) => Math.max(rangeFrom(f), Math.min(f.to || f.pages.length, f.pages.length));
+  const hasRange = (f) => rangeFrom(f) > 1 || rangeTo(f) < f.pages.length;
+  const inRange = (f, i) => i + 1 >= rangeFrom(f) && i + 1 <= rangeTo(f);
+  const rangeCount = (f) => rangeTo(f) - rangeFrom(f) + 1;
+
+  // 자료마다 쪽을 세는 말이 다르다 (슬라이드 n장 · 워드 n부분 · 그 밖에는 n쪽)
+  const unitOf = (f) => f.kind === "pptx" ? "장" : f.kind === "docx" ? "부분" : "쪽";
+
   function fileSummary(f) {
     if (f.kind === "image") return "사진";
-    let meta = f.pages.length + (f.kind === "pptx" ? "장" : "쪽");
+    const unit = unitOf(f);
+    let meta = (hasRange(f) ? `${rangeFrom(f)}~${rangeTo(f)}${unit} (전체 ${f.pages.length})` : f.pages.length + unit);
     if (f.scanned) meta += " · 스캔본";
-    else if (f.visuals.length) meta += ` · 그림 ${f.visuals.length}`;
+    else {
+      const vis = f.visuals.filter((v) => inRange(f, v.page)).length;
+      if (vis) meta += ` · 그림 ${vis}`;
+    }
     return meta;
   }
 
@@ -524,6 +587,8 @@
       if (isPptx(file)) {
         if (!window.JSZip) throw new Error("no jszip");
         Object.assign(item, await readPptx(file));
+      } else if (isDocx(file)) {
+        Object.assign(item, await readDocx(file));
       } else if (isImage(file)) {
         Object.assign(item, await readImage(file));
       } else {
@@ -543,10 +608,13 @@
   }
 
   async function addFiles(list) {
-    const files = [...list].filter((f) => isPdf(f) || isPptx(f) || isImage(f));
+    const files = [...list].filter((f) => isPdf(f) || isPptx(f) || isDocx(f) || isImage(f));
     if (!files.length) {
-      const old = [...list].some((f) => /\.ppt$/i.test(f.name));
-      setStatus(old ? "예전 형식(.ppt)은 읽을 수 없어요. PowerPoint에서 .pptx나 PDF로 저장해서 올려 주세요." : "PDF, PPTX, 사진(JPG·PNG) 파일만 올릴 수 있어요.", true);
+      const old = [...list].some((f) => /\.(ppt|doc)$/i.test(f.name));
+      const hwp = [...list].some((f) => /\.hwpx?$/i.test(f.name));
+      setStatus(hwp ? "한글(.hwp)은 아직 못 읽어요. 한글에서 PDF로 저장해 올려 주세요."
+        : old ? "예전 형식(.ppt·.doc)은 읽을 수 없어요. PDF나 .pptx·.docx로 저장해서 올려 주세요."
+        : "PDF, PPTX, 워드(.docx), 사진(JPG·PNG) 파일만 올릴 수 있어요.", true);
       return;
     }
     for (const f of files) {
@@ -600,6 +668,24 @@
     renderFiles();
   }
 
+  /** 자료 한 줄 아래에 펼쳐지는 '몇 쪽부터 몇 쪽까지' */
+  function rangeRow(f) {
+    const unit = unitOf(f);
+    const last = f.pages.length;
+    const num = (val, label, on) => {
+      const n = el("input", { type: "number", min: "1", max: String(last), value: String(val), inputmode: "numeric", "aria-label": label });
+      n.addEventListener("change", () => { on(parseInt(n.value, 10)); renderFiles(); });
+      return n;
+    };
+    return el("div", { class: "range-row" },
+      num(rangeFrom(f), f.name + " 시작 " + unit, (v) => { f.from = Number.isFinite(v) ? v : 1; if (rangeTo(f) < rangeFrom(f)) f.to = f.from; }),
+      el("span", { class: "range-sep", text: "~" }),
+      num(rangeTo(f), f.name + " 끝 " + unit, (v) => { f.to = Number.isFinite(v) ? v : last; if (rangeTo(f) < rangeFrom(f)) f.from = f.to; }),
+      el("span", { class: "range-unit", text: `${unit} (전체 ${last}${unit})` }),
+      hasRange(f) ? el("button", { type: "button", class: "link", text: "전체로", onclick: () => { f.from = null; f.to = null; renderFiles(); } }) : null
+    );
+  }
+
   function renderFiles() {
     const all = state.files;
     const allOn = all.length > 0 && all.every((f) => f.checked);
@@ -620,16 +706,23 @@
         el("span", { class: "nm-wrap" },
           el("label", { class: "nm", for: "file-" + f.id, title: f.name, text: f.name }),
           el("span", { class: "meta" + (f.failed ? " warn" : ""), text: meta, title: f.scanned ? "글자가 없는 쪽은 이미지로 보내 Claude가 직접 읽습니다" : null })),
-        el("button", { type: "button", class: "past-t" + (f.past ? " on" : ""), "aria-pressed": String(!!f.past), title: f.past ? "족보로 쓰는 중: 출제 경향만 참고해요. 누르면 공부자료로 바꿔요" : "지난 시험지(족보)면 눌러 주세요. 출제 경향을 반영해 문제를 예측해요", text: "족보", onclick: () => togglePast(f) }),
-        el("button", { type: "button", class: "x", "aria-label": f.name + " 자료함에서 지우기", title: "자료함에서 지우기", text: "지우기", onclick: () => removeFile(f) })
+        el("span", { class: "file-acts" },
+          el("button", { type: "button", class: "past-t" + (f.past ? " on" : ""), "aria-pressed": String(!!f.past), title: f.past ? "족보로 쓰는 중: 출제 경향만 참고해요. 누르면 공부자료로 바꿔요" : "지난 시험지(족보)면 눌러 주세요. 출제 경향을 반영해 문제를 예측해요", text: "족보", onclick: () => togglePast(f) }),
+          f.pages && f.pages.length > 1
+            ? el("button", { type: "button", class: "range-t" + (hasRange(f) ? " on" : ""), "aria-pressed": String(hasRange(f)),
+                title: "시험 범위만 쓰기 — 쪽을 좁히면 그 안에서 더 촘촘히 읽어요", text: "범위",
+                onclick: () => { f.rangeOpen = !f.rangeOpen; renderFiles(); } })
+            : null,
+          el("button", { type: "button", class: "x", "aria-label": f.name + " 자료함에서 지우기", title: "자료함에서 지우기", text: "지우기", onclick: () => removeFile(f) })),
+        f.rangeOpen && f.pages && f.pages.length > 1 ? rangeRow(f) : null
       );
     }));
     const ready = activeFiles();
     const block = quotaBlock();
     const loading = all.some((f) => f.checked && f.loading);
     $("go").disabled = !sb || state.busy || !ready.length || loading || !!block;
-    const pages = ready.reduce((a, f) => a + f.pages.length, 0);
-    const vis = ready.reduce((a, f) => a + f.visuals.length, 0);
+    const pages = ready.reduce((a, f) => a + rangeCount(f), 0);
+    const vis = ready.reduce((a, f) => a + f.visuals.filter((v) => inRange(f, v.page)).length, 0);
     $("fileState").textContent = loading ? "읽는 중…" : ready.length ? `✓ ${ready.length}개 읽기 완료 · ${pages}쪽` : "";
     $("fileStep").classList.toggle("done", !!ready.length && !loading);
     $("condStep").classList.toggle("now", !!ready.length);
@@ -838,7 +931,7 @@
   //  3장을 공부하려고 책을 통째로 올린 사람은 1~2장 문제만 받게 된다 — 표시도 안 나고.)
   function pickImages() {
     const all = [];
-    activeFiles().forEach((f, fi) => f.visuals.forEach((v, vi) => all.push({ f, fi, vi, ...v })));
+    activeFiles().forEach((f, fi) => f.visuals.forEach((v, vi) => { if (inRange(f, v.page)) all.push({ f, fi, vi, ...v }); }));
     const inOrder = (a, b) => a.fi - b.fi || a.page - b.page || a.vi - b.vi;
     const chosen = [];
     for (const score of [...new Set(all.map((x) => x.score))].sort((a, b) => b - a)) {
@@ -872,8 +965,10 @@
     };
     // 글자가 많으면 앞부분만 남기지 않고 쪽마다 고르게 줄임 (시험 범위 전체에서 문제가 나오게)
     // 쪽마다 같은 상한 c: 짧은 쪽은 그대로, 긴 쪽만 c자까지 (합이 budget 이 되는 c를 찾음)
+    // 쪽 번호(i)는 그대로 두고 범위 밖만 뺀다 — 'p.12' 표시와 그림 번호가 어긋나지 않게
+    const kept = (f) => f.pages.map((p, i) => ({ p, i })).filter(({ i }) => inRange(f, i));
     const section = (files, budget, head) => {
-      const lens = files.flatMap((f) => f.pages.map((p) => String(p).length));
+      const lens = files.flatMap((f) => kept(f).map(({ p }) => String(p).length));
       let cap = Infinity;
       if (lens.reduce((a, b) => a + b, 0) > budget) {
         let lo = 0, hi = Math.max(...lens);
@@ -881,7 +976,8 @@
         cap = lo;
       }
       const cut = (p) => (p = String(p), p.length > cap ? p.slice(0, cap) + " (…생략)" : p);
-      return files.map((f) => `===== ${head}: ${f.name} =====\n` + f.pages.map((p, i) => `[${pageName(f, i)}]\n${cut(p)}${tag(f, i)}`).join("\n\n"));
+      return files.map((f) => `===== ${head}: ${f.name}${hasRange(f) ? ` (${rangeFrom(f)}~${rangeTo(f)}${unitOf(f)}만)` : ""} =====\n`
+        + kept(f).map(({ p, i }) => `[${pageName(f, i)}]\n${cut(p)}${tag(f, i)}`).join("\n\n"));
     };
     // 족보는 뒤에 따로 (출제 근거가 아니라 경향 참고용)
     return [...section(ready.filter((f) => !f.past), TEXT_BUDGET, "자료"), ...section(ready.filter((f) => f.past), PAST_BUDGET, "족보(지난 시험)")].join("\n\n");
@@ -1508,6 +1604,11 @@
         out.answer = a.startsWith("O") || a === "참" || a === "TRUE" ? "O" : "X";
       } else {
         out.answer = String(q.answer || "").trim();
+        // 같은 뜻으로 인정할 다른 표기 (자장면/짜장면, 에이징/Aging). 단답형에서만 쓴다
+        if (type === "short" && Array.isArray(q.answer_alt)) {
+          const alt = q.answer_alt.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 6);
+          if (alt.length) out.answer_alt = alt;
+        }
       }
       return out;
     }).filter((q) => q.question && (q.type !== "mc" || q.choices.length >= 2));
@@ -1532,6 +1633,40 @@
   const tomorrow = () => { const d = new Date(); d.setHours(24, 0, 0, 0); return d.getTime(); };
   const isDue = (w) => !w.due || w.due <= Date.now();
   const subjectOf = (w) => w.subject || "과목 없음";
+
+  /* ---------- 단답형 자동 인정 ----------
+     '자장면/짜장면', '에이징/Aging' 처럼 뜻이 같은데 표기가 다른 답을 매번 손으로 '맞음' 누르게 하지 않는다.
+     출제할 때 answer_alt 로 인정할 표기를 같이 받아 둔다(PROMPT-exam.md).
+     **맞을 때만 자동으로 표시하고, 아니면 사람에게 넘긴다** — 기계가 틀렸다고 우기지 않게. */
+  const normAns = (s) => String(s ?? "").normalize("NFKC").toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[.,·ㆍ・/\\'"`~!?()\[\]{}<>:;_\-–—]/g, "");
+  function shortRight(user, q) {
+    const got = normAns(user);
+    if (!got) return false;
+    const cands = [q.answer, ...(Array.isArray(q.answer_alt) ? q.answer_alt : [])];
+    for (const c of cands) {
+      const full = normAns(c);
+      if (!full) continue;
+      if (got === full) return true;
+      // "에이징(Aging)" 처럼 괄호로 원어를 덧붙인 모범답안은 괄호 앞·안 어느 쪽만 써도 인정
+      const head = normAns(String(c).split("(")[0]);
+      if (head && got === head) return true;
+      const inside = String(c).match(/\(([^)]+)\)/);
+      if (inside && normAns(inside[1]) === got) return true;
+    }
+    return false;
+  }
+  /** 채점할 때 단답형 중 확실히 맞는 것만 미리 '맞음'으로 찍어 둔다 */
+  function autoMarkShort() {
+    if (!state.exam) return 0;
+    let n = 0;
+    state.exam.questions.forEach((q, i) => {
+      if (q.type !== "short" || state.self[i] != null) return;
+      if (shortRight(state.answers[i], q)) { state.self[i] = true; state.auto = state.auto || {}; state.auto[i] = true; n++; }
+    });
+    return n;
+  }
 
   // 채점 결과를 오답노트에 반영
   function recordResults() {
@@ -2324,7 +2459,7 @@
     if (q.type === "short" || q.type === "essay") {
       const v = state.self[i];
       box.append(el("div", { class: "selfcheck" },
-        el("span", { text: "모범답안과 비교해 보세요" }),
+        el("span", { text: state.auto?.[i] ? "모범답안과 같아서 맞음으로 뒀어요" : "모범답안과 비교해 보세요" }),
         el("button", { type: "button", class: v === true ? "on-ok" : "", onclick: () => { state.self[i] = true; renderAll(); recordResults(); }, text: "맞음" }),
         el("button", { type: "button", class: v === false ? "on-no" : "", onclick: () => { state.self[i] = false; renderAll(); recordResults(); }, text: "틀림" })
       ));
@@ -2448,8 +2583,10 @@
       state.graded = true;
       state.timerPick = false;
       state.round = Date.now();
+      const auto = autoMarkShort();   // 모범답안과 같은 단답형은 바로 맞음 처리
       persist();
       recordResults();
+      if (auto) setStatus(`단답형 ${auto}개는 모범답안과 같아서 맞음으로 뒀어요. 다르면 '틀림'을 눌러 주세요.`);
       loadRank();
     }
     renderAll();
