@@ -1814,6 +1814,140 @@
     return [toggle, box];
   }
 
+  /* ---------- 손글씨 수식 ----------
+     버튼에도 없는 모양(필기체 기호, 복잡한 분수)은 손으로 그려서 보낸다.
+     NAS의 Claude가 읽어 LaTeX로 돌려주고, 사람이 그걸 고칠 수 있게 그대로 답안칸에 넣는다. */
+  const INK_MSG = {
+    empty: "먼저 수식을 써 주세요.",
+    too_big: "그림이 너무 커요. 나눠서 써 주세요.",
+    limit_ip: "오늘은 손글씨를 많이 썼어요. 내일 다시 쓸 수 있어요.",
+    open: "먼저 보낸 손글씨를 읽는 중이에요. 잠깐만요.",
+    gone: "결과를 찾지 못했어요. 다시 해 주세요."
+  };
+  const INK_WAIT = 90 * 1000;
+
+  /** 획들을 흰 바탕에 다시 그려 PNG(base64)로. 글씨가 있는 데만 잘라 보낸다 */
+  function inkToPng(strokes) {
+    const pts = strokes.flat();
+    if (pts.length < 2) return null;
+    const pad = 14;
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+    const w = Math.max(...xs) - Math.min(...xs) + pad * 2;
+    const h = Math.max(...ys) - Math.min(...ys) + pad * 2;
+    const scale = Math.min(2, 1000 / Math.max(w, 1));
+    const c = document.createElement("canvas");
+    c.width = Math.max(32, Math.round(w * scale));
+    c.height = Math.max(32, Math.round(h * scale));
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.strokeStyle = "#111"; g.lineWidth = 2.5 * scale; g.lineCap = "round"; g.lineJoin = "round";
+    for (const st of strokes) {
+      if (st.length < 2) continue;
+      g.beginPath();
+      st.forEach((pt, i) => { const x = (pt.x - x0) * scale, y = (pt.y - y0) * scale; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+      g.stroke();
+    }
+    return c.toDataURL("image/png").split(",")[1] || null;
+  }
+
+  /** 손글씨 결과 기다리기: 처리기가 보내는 실시간 알림을 받되, 못 받아도 주기적으로 확인한다 */
+  function waitInk(id) {
+    return new Promise((done) => {
+      let over = false;
+      const finish = (r) => { if (over) return; over = true; clearInterval(timer); clearTimeout(limit); if (ch) sb.removeChannel(ch); done(r); };
+      const ch = sb.channel("ink-" + id).on("broadcast", { event: "done" }, ({ payload }) => {
+        if (payload?.status === "done" && payload.latex) finish({ latex: payload.latex });
+        else if (payload?.status === "error") finish({ error: payload.error });
+      }).subscribe();
+      const timer = setInterval(async () => {
+        const { data, error } = await sb.rpc("ink_get", { ink_id: id });
+        if (error || !data) return;
+        if (data.status === "done" && data.latex) finish({ latex: data.latex });
+        else if (data.status === "error") finish({ error: data.error || "인식에 실패했어요" });
+        else if (data.status === "gone") finish({ error: INK_MSG.gone });
+      }, 2000);
+      const limit = setTimeout(() => finish({ error: "시간이 오래 걸려요. 잠시 뒤 다시 해 주세요." }), INK_WAIT);
+    });
+  }
+
+  /** 답안칸 아래 손글씨판 */
+  function inkPad(ta) {
+    const canvas = el("canvas", { class: "inkpad-canvas", "aria-label": "수식을 손으로 쓰는 곳" });
+    const msg = el("p", { class: "inkpad-msg", "aria-live": "polite" });
+    const box = el("div", { class: "inkpad" }, canvas, msg);
+    box.hidden = true;
+    let strokes = [], drawing = null, sized = false;
+
+    const ctx = () => canvas.getContext("2d");
+    const redraw = () => {
+      const g = ctx();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, canvas.width, canvas.height);
+      const dpr = window.devicePixelRatio || 1;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.strokeStyle = getComputedStyle(canvas).color || "#111";
+      g.lineWidth = 2.5; g.lineCap = "round"; g.lineJoin = "round";
+      for (const st of strokes) {
+        if (st.length < 2) continue;
+        g.beginPath();
+        st.forEach((pt, i) => (i ? g.lineTo(pt.x, pt.y) : g.moveTo(pt.x, pt.y)));
+        g.stroke();
+      }
+    };
+    const size = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const r = canvas.getBoundingClientRect();
+      canvas.width = Math.round(r.width * dpr);
+      canvas.height = Math.round(r.height * dpr);
+      redraw();
+    };
+    const at = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    canvas.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); canvas.setPointerCapture(e.pointerId);
+      drawing = [at(e)]; strokes.push(drawing); msg.textContent = "";
+    });
+    canvas.addEventListener("pointermove", (e) => { if (!drawing) return; drawing.push(at(e)); redraw(); });
+    const stop = () => { drawing = null; };
+    canvas.addEventListener("pointerup", stop);
+    canvas.addEventListener("pointercancel", stop);
+    canvas.addEventListener("pointerleave", stop);
+
+    const undo = el("button", { type: "button", class: "btn", text: "되돌리기", onclick: () => { strokes.pop(); redraw(); } });
+    const clear = el("button", { type: "button", class: "btn", text: "지우기", onclick: () => { strokes = []; redraw(); msg.textContent = ""; } });
+    const read = el("button", { type: "button", class: "btn go-ink", text: "읽어서 넣기" });
+    read.addEventListener("click", async () => {
+      if (!sb) { msg.textContent = "사이트 설정이 끝나지 않았어요."; return; }
+      const png = inkToPng(strokes);
+      if (!png) { msg.textContent = INK_MSG.empty; return; }
+      read.disabled = undo.disabled = clear.disabled = true;
+      msg.textContent = "읽는 중…";
+      try {
+        const { data, error } = await sb.rpc("ink_new", { png });
+        if (error || !data?.ok) { msg.textContent = INK_MSG[data?.reason] || "보내지 못했어요."; return; }
+        notifyWorker("ink");
+        const r = await waitInk(data.id);
+        if (r.error) { msg.textContent = r.error; return; }
+        insertTex(ta, r.latex, 0);
+        strokes = []; redraw();
+        msg.textContent = "넣었어요. 틀린 곳은 고쳐 주세요.";
+      } catch (e) {
+        msg.textContent = "보내지 못했어요. 잠시 뒤 다시 해 주세요.";
+      } finally {
+        read.disabled = undo.disabled = clear.disabled = false;
+      }
+    });
+    box.append(el("div", { class: "inkpad-tools" }, undo, clear, read));
+
+    const toggle = el("button", { type: "button", class: "link inkpad-toggle", text: "손으로 쓰기",
+      onclick: () => {
+        box.hidden = !box.hidden;
+        toggle.textContent = box.hidden ? "손으로 쓰기" : "손글씨 닫기";
+        if (!box.hidden && !sized) { sized = true; requestAnimationFrame(size); }
+      } });
+    return [toggle, box];
+  }
+
   /* 수식: $…$ 인라인, $$…$$ 블록 (KaTeX) */
   function renderMath(root) {
     if (!window.renderMathInElement) return;
@@ -1915,7 +2049,7 @@
         state.answers[i] = ta.value; persist(); autoGrow(ta);
         clearTimeout(pv); pv = setTimeout(updatePreview, 250);
       });
-      art.append(ta, ...mathPad(ta), preview);
+      art.append(ta, ...mathPad(ta), ...inkPad(ta), preview);
       updatePreview();
     }
     if (state.printKey || ((state.open[i] || state.graded) && !state.timer)) art.append(renderSol(q, i));

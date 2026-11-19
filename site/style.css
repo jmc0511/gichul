@@ -594,6 +594,20 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .mathpad button:active { transform: translateY(1px); }
 @media print { .mathpad, .mathpad-toggle { display: none; } }
 
+/* 손글씨 수식판 */
+.inkpad-toggle { display: inline-block; margin: 6px 0 0 10px; font-size: 12px; }
+.inkpad { margin: 8px 0 0; }
+.inkpad-canvas {
+  display: block; width: 100%; height: 170px;
+  border: 1px dashed var(--line); border-radius: 12px; background: var(--paper, #fff); color: var(--ink);
+  touch-action: none; cursor: crosshair;   /* 손가락으로 그릴 때 화면이 같이 밀리지 않게 */
+}
+.inkpad-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.inkpad-tools .btn { min-height: 38px; }
+.inkpad-tools .go-ink { margin-left: auto; }
+.inkpad-msg { margin: 6px 0 0; min-height: 16px; font-size: 12px; color: var(--muted); }
+@media print { .inkpad, .inkpad-toggle { display: none; } }
+
 /* 지문 — 여러 문항이 같은 글을 쓸 때 한 번만 싣는다 (시험지의 "[1~3] 다음 글을 읽고…") */
 /* 묶음 자체는 단을 넘어가도 된다 — 통째로 묶으면 옆 단이 크게 빈다.
    지문 상자만 쪼개지지 않게 하고, 문항은 평소처럼 흐르게 둔다. */

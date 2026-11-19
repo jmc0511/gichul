@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { pending, claim, finish, failReq, setProgress, stillWanted, resetStale, broadcast, downloadImage, uploadFigure, earlierQuestions, examQuestions, finishRegen, heartbeat, cleanup, openReports, claimReports, examSource, replaceQuestion, closeReports, resetStaleReports, SUPABASE_URL, SUPABASE_SECRET } from "./queue.mjs";
+import { pending, claim, finish, failReq, setProgress, stillWanted, resetStale, broadcast, downloadImage, uploadFigure, earlierQuestions, examQuestions, finishRegen, heartbeat, cleanup, openReports, claimReports, examSource, replaceQuestion, closeReports, resetStaleReports, inkPending, inkClaim, inkFinish, inkFail, inkResetStale, purgeInk, SUPABASE_URL, SUPABASE_SECRET } from "./queue.mjs";
 
 const INTERVAL = (parseInt(process.env.POLL_SECONDS, 10) || 30) * 1000;
 const MAX_PARALLEL = parseInt(process.env.MAX_PARALLEL, 10) || 3;
@@ -17,6 +17,11 @@ const RULES = {
   summary: readFileSync(new URL("./PROMPT-summary.md", import.meta.url), "utf8"),
   explain: readFileSync(new URL("./PROMPT-explain.md", import.meta.url), "utf8")
 };
+// 손글씨 수식 인식은 출제와 성격이 다르다 — 사람이 화면 앞에서 기다리므로 짧게 끊는다
+const INK_RULE = readFileSync(new URL("./PROMPT-ink.md", import.meta.url), "utf8");
+const INK_TIMEOUT = 90 * 1000;
+const MAX_INK = 2;
+const inkRunning = new Set();
 const KIND_NAME = { exam: "시험지", summary: "요약", explain: "설명" };
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const running = new Set();
@@ -430,13 +435,63 @@ async function housekeeping() {
   if (now - lastCleanup > 24 * 3600 * 1000) {
     lastCleanup = now;
     cleanup().then((r) => log(`청소: 자료 비운 요청 ${r.purged}개, 지운 그림 ${r.files}개`)).catch((e) => log("청소 실패:", e.message));
+    purgeInk().then((n) => { if (n) log(`청소: 하루 지난 손글씨 ${n}건 지움`); }).catch((e) => log("손글씨 청소 실패:", e.message));
   }
+}
+
+/* ---------- 손글씨 수식 → LaTeX ---------- */
+// 출제 대기열과 따로 돈다. MAX_PARALLEL 과도 따로라, 출제가 밀려 있어도 인식은 바로 된다.
+function cleanLatex(raw) {
+  let t = String(raw).trim()
+    .replace(/^```(?:latex|tex)?\s*/i, "").replace(/```\s*$/, "")
+    .split("\n").map((x) => x.trim()).filter(Boolean)[0] || "";
+  t = t.replace(/^\$\$?/, "").replace(/\$\$?$/, "").trim();   // $…$ 로 감싸 왔으면 벗긴다
+  if (t.length > 400) t = t.slice(0, 400);
+  return t;
+}
+async function handleInk(id) {
+  inkRunning.add(id);
+  try {
+    const row = await inkClaim(id);
+    if (!row) return; // 다른 처리기가 가져감
+    const t0 = Date.now();
+    const content = [
+      { type: "image", source: { type: "base64", media_type: "image/png", data: row.png } },
+      { type: "text", text: `${INK_RULE}\n\n[다시 한 번] LaTeX 한 줄만 출력하세요.` }
+    ];
+    const latex = cleanLatex(await askClaude(content, () => {}, null, INK_TIMEOUT));
+    if (!latex || latex === "?") {
+      await inkFail(id, "글씨를 알아보지 못했어요");
+      broadcast("ink-" + id, "done", { status: "error", error: "글씨를 알아보지 못했어요" });
+      log(`[손글씨 ${short(id)}] 못 읽음 (${Math.round((Date.now() - t0) / 1000)}초)`);
+      return;
+    }
+    await inkFinish(id, latex);
+    broadcast("ink-" + id, "done", { status: "done", latex });
+    log(`[손글씨 ${short(id)}] ${latex.slice(0, 60)} (${Math.round((Date.now() - t0) / 1000)}초)`);
+  } catch (e) {
+    await inkFail(id, e.message).catch(() => {});
+    broadcast("ink-" + id, "done", { status: "error", error: "인식에 실패했어요" }).catch(() => {});
+    log(`[손글씨 ${short(id)}] 실패: ${e.message}`);
+  } finally {
+    inkRunning.delete(id);
+  }
+}
+async function checkInk() {
+  if (inkRunning.size >= MAX_INK) return;
+  try {
+    for (const r of await inkPending()) {
+      if (inkRunning.size >= MAX_INK) break;
+      if (!inkRunning.has(r.id)) handleInk(r.id);
+    }
+  } catch (e) { log("손글씨 확인 실패:", e.message); }
 }
 
 async function check() {
   if (checking) return;
   checking = true;
   housekeeping();
+  checkInk(); // 사람이 기다리는 일이라 출제보다 먼저
   try {
     if (Date.now() - lastStaleCheck > 5 * 60 * 1000) {
       lastStaleCheck = Date.now();
@@ -444,6 +499,8 @@ async function check() {
       if (n) log(`멈춰 있던 요청 ${n}개를 다시 대기열로`);
       const m = await resetStaleReports().catch(() => 0);
       if (m) log(`멈춰 있던 신고 ${m}건을 다시 열기`);
+      const k = await inkResetStale().catch(() => 0);
+      if (k) log(`멈춰 있던 손글씨 ${k}건을 다시 대기열로`);
     }
     if (running.size < MAX_PARALLEL) {
       for (const r of await pending()) {
@@ -463,6 +520,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_SECRET, { auth: { persistSession:
 sb.channel("queue")
   .on("broadcast", { event: "new" }, () => kick())
   .on("broadcast", { event: "report" }, () => kick())
+  .on("broadcast", { event: "ink" }, () => { checkInk(); })
   .subscribe((status) => log("실시간 알림:", status));
 
 log(`처리기 시작 (실시간 알림 + ${INTERVAL / 1000}초 간격 확인, 동시 ${MAX_PARALLEL}개${MODEL ? ", 모델 " + MODEL : ""})`);

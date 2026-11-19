@@ -191,6 +191,35 @@ export async function heartbeat(info) {
   await call("PATCH", "/worker_status?id=eq.1", { seen_at: new Date().toISOString(), info });
 }
 
+/* ---------- 손글씨 수식 인식 ----------
+   출제 대기열과 따로 돈다. 사람이 화면 앞에서 기다리는 일이라 먼저, 그리고 짧게 처리한다. */
+export async function inkPending() {
+  return call("GET", "/ink?status=eq.pending&select=id,created_at&order=created_at.asc&limit=5");
+}
+/** 인식을 '하는 중'으로 잡고 그림을 돌려줌. 이미 다른 곳이 잡았으면 null */
+export async function inkClaim(id) {
+  const got = await call("PATCH", `/ink?id=eq.${id}&status=eq.pending`, { status: "working", started_at: new Date().toISOString() });
+  if (!got.length) return null;
+  const [row] = await call("GET", `/ink?id=eq.${id}&select=png`);
+  return row;
+}
+/** 끝나면 그림은 바로 비운다 (손글씨를 오래 들고 있을 이유가 없다) */
+export async function inkFinish(id, latex) {
+  await call("PATCH", `/ink?id=eq.${id}`, { status: "done", latex, png: "", finished_at: new Date().toISOString() });
+}
+export async function inkFail(id, reason) {
+  await call("PATCH", `/ink?id=eq.${id}`, { status: "error", error: String(reason).slice(0, 200), png: "", finished_at: new Date().toISOString() });
+}
+/** 처리기가 중간에 죽어 '하는 중'으로 멈춘 것을 다시 대기열로 */
+export async function inkResetStale(minutes = 2) {
+  const since = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+  const rows = await call("PATCH", `/ink?status=eq.working&started_at=lt.${since}`, { status: "pending", started_at: null });
+  return rows.length;
+}
+export async function purgeInk(keepHours = 24) {
+  return rpc("purge_old_ink", { keep_hours: keepHours });
+}
+
 /* ---------- 하루 한 번 청소 ---------- */
 async function rpc(name, body = {}) {
   return call("POST", "/rpc/" + name, body);
