@@ -923,7 +923,7 @@
       `- 영역: ${areas.join(", ")}. 고른 영역을 고르게 섞고, 각 문항의 area에 영역 이름을 쓰세요.`,
       areas.includes("어휘") ? "- 어휘: 자료에 나온 단어·숙어의 뜻, 유의어·반의어, 문맥에 맞는 단어 고르기." : null,
       areas.includes("문법") ? "- 문법: 빈칸에 알맞은 형태, 어법상 틀린 것 고르기, 문장 전환. 자료에서 다룬 문법 항목만." : null,
-      areas.includes("독해") ? "- 독해: question 안에 지시문, 빈 줄, 지문(자료 문장을 활용하거나 자료 수준으로 새로 작성) 순서로 넣고, 내용 일치·주제·빈칸 추론을 묻으세요." : null,
+      areas.includes("독해") ? "- 독해: 지문은 question 에 섞지 말고 passage 와 passage_id 로 따로 주세요. 한 지문으로 2~3문제를 내고 그 문제들에 같은 passage_id 를 붙여 연달아 놓으세요. 내용 일치·주제·빈칸 추론을 묻습니다." : null,
       areas.includes("해석·작문") ? "- 해석·작문: 위에서 고른 유형과 관계없이 short 또는 essay 형식으로, 문장 해석이나 주어진 표현을 써서 영작하기. 모범답안을 answer에 쓰세요." : null
     ].filter((x) => x != null) : [];
     return [
@@ -1445,6 +1445,14 @@
         area: String(q.area || "").trim().slice(0, 12),
         points: Math.max(1, Math.min(20, parseInt(q.points, 10) || 3))
       };
+      // 지문: 여러 문항이 같은 글을 공유할 수 있다. 길이는 잘라서 받는다.
+      const passage = String(q.passage || "").trim();
+      if (passage) {
+        out.passage = passage.slice(0, 4000);
+        out.passage_id = String(q.passage_id || "").trim().slice(0, 40) || null;
+        const lead = String(q.passage_lead || "").trim();
+        if (lead) out.passage_lead = lead.slice(0, 120);
+      }
       if (q.figure && typeof q.figure.path === "string" && /^[0-9a-f-]{36}\/\d+\.jpg$/i.test(q.figure.path)) {
         const c = q.figure.crop;
         const box = (b) => Array.isArray(b) && b.length === 4 && b.every((v) => typeof v === "number" && isFinite(v));
@@ -1683,10 +1691,21 @@
     if (state.graded && realExam()) nodes.push(renderRank());
     // 인쇄할 때 '한 장에 N문제'를 골랐으면 N문제씩 묶어 묶음마다 새 장에서 시작
     const per = state.printKey != null ? perPage() : 0;
-    const qs = ex.questions.map((q, i) => renderQ(q, i));
+    const qs = withPassages(ex.questions);
     // 문제마다 같은 높이를 줘서 남는 곳이 각 문제 아래 풀이 칸이 되게 (2단이라 한 단에 N/2문제)
-    if (per) for (let k = 0; k < qs.length; k += per) nodes.push(el("div", { class: "questions per-page-chunk" + (k ? "" : " first"), style: `--rows:${Math.ceil(per / 2)}` }, ...qs.slice(k, k + per)));
-    else nodes.push(el("div", { class: "questions" }, ...qs));
+    if (per) {
+      // 지문 묶음은 쪼개면 안 되므로 요소 수가 아니라 문항 수로 센다
+      const chunks = [];
+      let cur = [], count = 0;
+      for (const node of qs) {
+        const n = Number(node.dataset?.qcount || 1);
+        if (count && count + n > per) { chunks.push(cur); cur = []; count = 0; }
+        cur.push(node); count += n;
+      }
+      if (cur.length) chunks.push(cur);
+      chunks.forEach((chunk, k) => nodes.push(
+        el("div", { class: "questions per-page-chunk" + (k ? "" : " first"), style: `--rows:${Math.ceil(per / 2)}` }, ...chunk)));
+    } else nodes.push(el("div", { class: "questions" }, ...qs));
     sheet.replaceChildren(...nodes);
     renderMath(sheet);
     sheet.querySelectorAll("textarea.write").forEach(autoGrow);
@@ -1712,6 +1731,41 @@
   function autoGrow(ta) {
     ta.style.height = "auto";
     ta.style.height = ta.scrollHeight + 2 + "px";
+  }
+
+  /**
+   * 문항 목록을 그리되, 지문(passage)이 같은 문항끼리는 지문을 한 번만 싣는다.
+   * 실제 시험지의 "[1~3] 다음 글을 읽고 물음에 답하시오"와 같은 모양.
+   * 지문은 문항마다 들고 있다(중복 저장). 오답노트처럼 문항 하나만 떼어 봐도 지문이 따라와야 해서다.
+   */
+  function withPassages(questions) {
+    const out = [];
+    for (let i = 0; i < questions.length; i += 1) {
+      const q = questions[i];
+      const key = passageKey(q);
+      if (!key) { out.push(renderQ(q, i)); continue; }
+
+      // 같은 지문을 쓰는 문항이 몇 번까지 이어지는지
+      let end = i;
+      while (end + 1 < questions.length && passageKey(questions[end + 1]) === key) end += 1;
+
+      const span = end > i ? `[${i + 1}~${end + 1}]` : `[${i + 1}]`;
+      out.push(el("div", { class: "passage-group", "data-qcount": String(end - i + 1) },
+        el("div", { class: "passage" },
+          el("p", { class: "passage-head" },
+            el("b", { text: span }), " ",
+            q.passage_lead || "다음 글을 읽고 물음에 답하시오."),
+          el("div", { class: "passage-body", text: String(q.passage) })),
+        ...questions.slice(i, end + 1).map((x, k) => renderQ(x, i + k))));
+      i = end;
+    }
+    return out;
+  }
+
+  /** 지문이 있으면 묶음 열쇠를 돌려준다. passage_id 가 없으면 지문 글 자체로 묶는다. */
+  function passageKey(q) {
+    if (!q || !q.passage || !String(q.passage).trim()) return null;
+    return String(q.passage_id || q.passage).trim();
   }
 
   function renderQ(q, i) {
