@@ -1291,11 +1291,11 @@
     box.replaceChildren(...EXAMPLES.map((x, i) =>
       el("li", { class: "ex example", style: `--c:${subjectColor(x.subject)}` },
         el("button", { type: "button", class: "ex-open", onclick: () => openExample(i, "make"), "aria-label": x.title + " 예시 둘러보기" },
-          el("span", { class: "sub", text: "예시 · " + x.subject }),
+          el("span", { class: "sub", text: x.subject }),
           el("span", { class: "ex-t", text: x.title }),
           el("span", { class: "meta" },
-            el("span", { text: `${x.questions.length}문항 · 해설 포함` }),
-            el("span", { class: "go-tag", text: "둘러보기 →" }))))));
+            el("span", { text: `${x.questions.length}문항, 해설 포함` }),
+            el("span", { class: "go-tag", text: "둘러보기" }))))));
   }
 
   /* 한 번 누르면 "정말?"으로 바뀌고, 4초 안에 다시 누르면 실행 */
@@ -1399,7 +1399,7 @@
           el("span", { class: "ex-t", text: x.title || kindName }),
           el("span", { class: "meta" },
             el("span", { text: amount + (req ? "" : ` · 받은 ${kindName}`) }),
-            el("span", { class: "go-tag", text: cur ? "보는 중" : doc ? "읽기 →" : "풀기 →" }))),
+            el("span", { class: "go-tag", text: cur ? "보는 중" : doc ? "읽기" : "풀기" }))),
         el("span", { class: "acts" },
           req?.reusable ? retryButton(req, doc ? `${kindName} 다시 만들기` : "새 문제로 다시", x.kind || "exam") : null,
           req ? confirmButton("삭제", "정말 삭제?", () => deleteExam(x)) : confirmButton("목록에서 빼기", "정말 뺄까요?", () => deleteExam(x))));
@@ -1410,7 +1410,7 @@
         el("button", { type: "button", class: "ex-open", onclick: () => openExample(0) },
           el("span", { class: "sub", text: "예시 · " + EXAMPLE.subject }),
           el("span", { class: "ex-t", text: EXAMPLE.title }),
-          el("span", { class: "meta" }, el("span", { text: `${EXAMPLE.questions.length}문항` }), el("span", { class: "go-tag", text: "둘러보기 →" })))));
+          el("span", { class: "meta" }, el("span", { text: `${EXAMPLE.questions.length}문항` }), el("span", { class: "go-tag", text: "둘러보기" })))));
     }
     $("examList").replaceChildren(...cards);
     renderSamples();
