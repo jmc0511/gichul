@@ -581,6 +581,19 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 /* 공지 바 — 앱 설치 안내와 구분되게 테두리 색만 다르게 */
 .notice-bar { background: var(--omr-soft); color: var(--ink); }
 
+/* 수식 키패드 — 폰 자판에 없는 기호를 버튼으로 */
+.mathpad-toggle { display: inline-block; margin: 6px 0 0; font-size: 12px; }
+.mathpad { margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.mathpad-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.mathpad button {
+  min-width: 42px; min-height: 38px; padding: 0 10px;
+  border: 0; border-radius: 10px; background: var(--raise, rgba(0,0,0,.05)); color: inherit;
+  font-size: 15px; line-height: 1; cursor: pointer;
+}
+.mathpad button:hover { background: var(--line); }
+.mathpad button:active { transform: translateY(1px); }
+@media print { .mathpad, .mathpad-toggle { display: none; } }
+
 /* 지문 — 여러 문항이 같은 글을 쓸 때 한 번만 싣는다 (시험지의 "[1~3] 다음 글을 읽고…") */
 /* 묶음 자체는 단을 넘어가도 된다 — 통째로 묶으면 옆 단이 크게 빈다.
    지문 상자만 쪼개지지 않게 하고, 문항은 평소처럼 흐르게 둔다. */

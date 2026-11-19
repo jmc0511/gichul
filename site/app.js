@@ -1752,6 +1752,68 @@
     sheet.querySelectorAll("textarea.write").forEach(autoGrow);
   }
 
+  /* ---------- 수식 키패드 ----------
+     폰 자판에는 ∫·Σ·√·≤ 가 없다. 답을 알아도 못 적는 일이 없게 버튼으로 넣어 준다.
+     [보이는 글자, 넣을 LaTeX, 끝에서 몇 칸 앞에 커서를 둘지] */
+  const MATH_KEYS = [
+    { name: "기본", keys: [
+      ["a⁄b", "\\frac{}{}", 3, "분수"], ["x²", "^{}", 1, "제곱"], ["x₂", "_{}", 1, "아래첨자"],
+      ["√", "\\sqrt{}", 1, "루트"], ["ⁿ√", "\\sqrt[]{}", 3, "n제곱근"], ["|x|", "\\left| \\right|", 8, "절댓값"],
+      ["±", "\\pm ", 0], ["×", "\\times ", 0], ["÷", "\\div ", 0],
+      ["≤", "\\le ", 0], ["≥", "\\ge ", 0], ["≠", "\\ne ", 0], ["≈", "\\approx ", 0]
+    ] },
+    { name: "미적분", keys: [
+      ["∫", "\\int ", 0], ["∫ᵃᵇ", "\\int_{}^{} ", 5, "정적분"], ["∑", "\\sum_{n=1}^{}", 1, "시그마"],
+      ["lim", "\\lim_{n \\to \\infty} ", 0], ["∞", "\\infty ", 0], ["→", "\\to ", 0],
+      ["dy/dx", "\\frac{dy}{dx}", 0, "미분"], ["f′", "f'()", 1], ["eˣ", "e^{}", 1], ["ln", "\\ln ", 0], ["log", "\\log_{}", 1]
+    ] },
+    { name: "그리스", keys: [
+      ["π", "\\pi ", 0], ["θ", "\\theta ", 0], ["α", "\\alpha ", 0],
+      ["β", "\\beta ", 0], ["Δ", "\\Delta ", 0], ["°", "^\\circ ", 0, "도"]
+    ] }
+  ];
+  // 커서 앞의 $ 개수가 홀수면 이미 수식 안이다 (\$ 는 글자 그대로의 달러라 세지 않는다)
+  function inMath(v, at) {
+    let n = 0;
+    for (let i = 0; i < at; i++) if (v[i] === "$" && v[i - 1] !== "\\") n++;
+    return n % 2 === 1;
+  }
+  function insertTex(ta, tex, back) {
+    const a = ta.selectionStart, b = ta.selectionEnd, v = ta.value;
+    const sel = v.slice(a, b);
+    // 고른 글자가 있으면 그 자리에 넣는다 (x+1 을 고르고 √ 를 누르면 \sqrt{x+1})
+    let ins = sel && back > 0 ? tex.slice(0, tex.length - back) + sel + tex.slice(tex.length - back) : tex;
+    let caret = back;
+    if (!inMath(v, a)) { ins = "$" + ins + "$"; caret = back + 1; }
+    ta.value = v.slice(0, a) + ins + v.slice(b);
+    const at = a + ins.length - caret;
+    ta.setSelectionRange(at, at);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.focus();
+  }
+  /** 답안칸 아래 수식 버튼판. 연 상태는 이 기기에 기억해 둔다 */
+  function mathPad(ta) {
+    const box = el("div", { class: "mathpad", hidden: !load("gichul.mathPad", false) });
+    for (const g of MATH_KEYS) {
+      box.append(el("div", { class: "mathpad-row", "aria-label": g.name },
+        ...g.keys.map(([label, tex, back, title]) => {
+          const b = el("button", { type: "button", text: label, title: title || label, "aria-label": title || label });
+          // 누를 때 답안칸에서 포커스가 빠지면 폰에서 자판이 닫힌다
+          b.addEventListener("pointerdown", (e) => e.preventDefault());
+          b.addEventListener("click", () => insertTex(ta, tex, back));
+          return b;
+        })));
+    }
+    const toggle = el("button", { type: "button", class: "link mathpad-toggle",
+      text: box.hidden ? "수식 버튼 열기" : "수식 버튼 닫기",
+      onclick: () => {
+        box.hidden = !box.hidden;
+        toggle.textContent = box.hidden ? "수식 버튼 열기" : "수식 버튼 닫기";
+        store("gichul.mathPad", !box.hidden);
+      } });
+    return [toggle, box];
+  }
+
   /* 수식: $…$ 인라인, $$…$$ 블록 (KaTeX) */
   function renderMath(root) {
     if (!window.renderMathInElement) return;
@@ -1853,7 +1915,7 @@
         state.answers[i] = ta.value; persist(); autoGrow(ta);
         clearTimeout(pv); pv = setTimeout(updatePreview, 250);
       });
-      art.append(ta, preview);
+      art.append(ta, ...mathPad(ta), preview);
       updatePreview();
     }
     if (state.printKey || ((state.open[i] || state.graded) && !state.timer)) art.append(renderSol(q, i));
