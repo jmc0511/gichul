@@ -7,7 +7,7 @@
   - 폭 1100px 기준, 배율은 min(2, 1100/쪽너비) — renderPdfPage
   - JPEG 품질 0.75 — canvasToJpeg
   - 최대 20장 — MAX_IMAGES
-  - 글자가 거의 없는 쪽(40자 미만)은 점수 1000이라 **앞에서부터** 20장이 뽑힌다 (pickImages 의 안정 정렬)
+  - 글자가 거의 없는 쪽(40자 미만)은 점수 1000. 같은 점수가 20장을 넘으면 **자료 전체에서 고르게** 뽑는다 (pickImages)
 
 material.txt 의 해당 쪽에는 "[이 쪽의 그림: 첨부 이미지 #n]" 을 붙이고,
 images/labels.json 에 사이트와 같은 이름표를 쓴다.
@@ -44,7 +44,11 @@ def main():
     if "--pages" in opts or "pages" in opts:
         a, _, b = opts.get("pages", opts.get("--pages", "")).partition("-")
         want = [i for i in range(int(a) - 1, int(b or a)) if i < len(texts)]
-    chosen = want[:MAX_IMAGES]           # 점수가 같으면 앞쪽부터 (pickImages 와 같음)
+    # 점수가 같은 쪽이 자리보다 많으면 자료 전체에 고르게 (pickImages 와 같은 계산)
+    if len(want) > MAX_IMAGES:
+        chosen = [want[(2 * i + 1) * len(want) // (2 * MAX_IMAGES)] for i in range(MAX_IMAGES)]
+    else:
+        chosen = want
     if not chosen:
         print("그림으로 보낼 쪽이 없습니다 (글자가 충분한 자료입니다)")
         sys.exit(1)
@@ -71,6 +75,6 @@ def main():
     total = sum(os.path.getsize(os.path.join(imgdir, f)) for f in os.listdir(imgdir) if f.endswith(".jpg"))
     print(f"{base}: {doc.page_count}쪽 중 {len(chosen)}장 그림으로 ({chosen[0] + 1}~{chosen[-1] + 1}쪽), {total // 1024}KB")
     if len(want) > MAX_IMAGES:
-        print(f"※ 그림이 필요한 쪽 {len(want)}개 중 {MAX_IMAGES}장만 간다 — 뒤쪽 {len(want) - MAX_IMAGES}쪽은 모델이 아예 못 본다 (사이트도 같다)")
+        print(f"※ 그림이 필요한 쪽 {len(want)}개 중 {MAX_IMAGES}장만 간다 — 나머지 {len(want) - MAX_IMAGES}쪽은 모델이 못 본다 (사이트도 같다)")
 
 main()

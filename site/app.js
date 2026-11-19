@@ -641,7 +641,13 @@
     if (!sb) setStatus("사이트 설정이 끝나지 않았습니다. config.js에 Supabase 주소와 공개 키를 넣어 주세요.", true, true);
     else if (!ready.length) setStatus(all.length ? "출제에 쓸 자료를 체크해 주세요." : "PDF를 올리고 요청을 보내면 문제를 만들어 문제집에 올려 드려요.", false, true);
     else {
-      setStatus(`자료 ${ready.length}개 · ${pages}쪽 읽기 완료` + (vis ? ` · 그림 ${Math.min(vis, MAX_IMAGES)}장 함께 보냄` + (vis > MAX_IMAGES ? ` (${vis}장 중 중요한 것만)` : "") : "") + ". '출제 요청 보내기'를 눌러야 시험지를 만들기 시작해요.", false, true);
+      // 그림이 20장을 넘으면 어떻게 고른 건지 알려 준다. 스캔본은 그 쪽이 통째로 안 읽히는 거라 더 세게 말한다
+      const over = vis > MAX_IMAGES
+        ? ready.some((f) => f.scanned)
+          ? ` (글자가 없는 쪽이라 그림으로 보내요. ${vis}쪽 중 자료 전체에서 고르게 ${MAX_IMAGES}쪽만 가요 — 시험 범위만 따로 올리면 더 정확해요)`
+          : ` (${vis}장 중 자료 전체에서 고르게 ${MAX_IMAGES}장)`
+        : "";
+      setStatus(`자료 ${ready.length}개 · ${pages}쪽 읽기 완료` + (vis ? ` · 그림 ${Math.min(vis, MAX_IMAGES)}장 함께 보냄` + over : "") + ". '출제 요청 보내기'를 눌러야 시험지를 만들기 시작해요.", false, true);
     }
   }
 
@@ -825,12 +831,25 @@
 
   /* ---------- 출제 요청 ---------- */
   const MAX_IMAGES = 20;
-  // 보낼 그림 고르기: 글자 없는 쪽 > 그림 많은 쪽 순으로 최대 20장, 자료 순서대로 번호를 붙임
+  // 보낼 그림 고르기: 글자 없는 쪽 > 그림 많은 쪽 순으로 최대 20장, 자료 순서대로 번호를 붙임.
+  // 점수가 같은 쪽이 자리보다 많으면 **자료 전체에서 고르게** 뽑는다.
+  // (예전에는 점수가 같으면 앞에서부터 잘렸다. 글자 없는 쪽은 전부 1000점이라,
+  //  104쪽짜리 스캔본이면 늘 1~20쪽만 가고 뒤 84쪽은 모델이 아예 못 봤다.
+  //  3장을 공부하려고 책을 통째로 올린 사람은 1~2장 문제만 받게 된다 — 표시도 안 나고.)
   function pickImages() {
     const all = [];
     activeFiles().forEach((f, fi) => f.visuals.forEach((v, vi) => all.push({ f, fi, vi, ...v })));
-    const chosen = all.sort((a, b) => b.score - a.score).slice(0, MAX_IMAGES)
-      .sort((a, b) => a.fi - b.fi || a.page - b.page || a.vi - b.vi);
+    const inOrder = (a, b) => a.fi - b.fi || a.page - b.page || a.vi - b.vi;
+    const chosen = [];
+    for (const score of [...new Set(all.map((x) => x.score))].sort((a, b) => b - a)) {
+      const room = MAX_IMAGES - chosen.length;
+      if (room <= 0) break;
+      const tier = all.filter((x) => x.score === score).sort(inOrder);
+      if (tier.length <= room) { chosen.push(...tier); continue; }
+      // 같은 점수끼리는 자료 앞뒤에 걸쳐 고르게 (104쪽에서 20장이면 약 5쪽 간격)
+      for (let i = 0; i < room; i++) chosen.push(tier[Math.floor((i + 0.5) * tier.length / room)]);
+    }
+    chosen.sort(inOrder);
     chosen.forEach((c, k) => {
       c.no = k + 1;
       c.label = (c.f.past ? "족보 " : "") + (c.f.kind === "image" ? `${c.f.name} (사진)` : `${c.f.name} ${pageName(c.f, c.page)}`);
