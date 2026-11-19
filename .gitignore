@@ -8,3 +8,7 @@ nas/.env
 work/
 node_modules/
 *.log
+
+# 평가셋 — 실제 강의자료·개인정보가 들어가므로 공개 저장소에 올리지 않는다
+eval/cases/
+eval/results/
