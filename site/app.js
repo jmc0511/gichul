@@ -76,6 +76,17 @@
      앱은 User-Agent 끝에 GichuriApp 을 붙이고, 웹뷰가 못 하는 일(구글·애플 로그인 창, 인쇄, 공유)을 대신 해 줌.
      앱 쪽 핸들러: oauth(url) → 돌아온 주소, print(), share({text, filename} | {url, title}) */
   const inApp = /GichuriApp/.test(navigator.userAgent);
+  // 앱이면 너비와 상관없이 앱처럼 보이게 (아이패드에서도 하단 탭바). 스타일은 style.css 의 body.in-app
+  if (inApp) {
+    document.body.classList.add("in-app");
+    // 앱에서는 '복사'·'파일 저장'이 아니라 공유 시트가 뜬다. 하는 일에 맞게 이름도 바꾼다
+    document.addEventListener("DOMContentLoaded", relabelForApp);
+    if (document.readyState !== "loading") relabelForApp();
+  }
+  function relabelForApp() {
+    const say = { docShare: "공유하기", save: "내보내기", docSave: "내보내기", print: "인쇄 · PDF" };
+    for (const id in say) { const n = document.getElementById(id); if (n) n.textContent = say[id]; }
+  }
   const APP_REDIRECT = "gichuri://auth";
   function native(name, ...args) {
     return new Promise((resolve) => {

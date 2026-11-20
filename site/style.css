@@ -390,6 +390,41 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
   .toast { top: calc(env(safe-area-inset-top, 0px) + 60px); }
   .foot-links { padding-bottom: 8px; }
 }
+/* ---------- 앱 전용 ----------
+   앱은 폰·패드에서만 쓴다. 폰은 위의 720px 규칙이 이미 앱처럼 만들어 주지만,
+   아이패드(721px~)에서는 상단 탭바 + 1단이라 "좁은 PC 화면"이 됐다.
+   앱이면 너비와 상관없이 하단 탭바를 쓰고, 넓은 화면은 2단으로 넓게 쓴다. */
+@media (min-width: 721px) {
+  body.in-app { --tabbar: calc(62px + env(safe-area-inset-bottom, 0px)); }
+  /* backdrop-filter 가 있으면 그 안의 position:fixed 가 화면이 아니라 .top 을 기준으로 잡혀
+     탭바가 위로 붙어 버린다. 폰 규칙에 이 줄이 있는 이유도 같다 */
+  body.in-app .top { backdrop-filter: none; background: var(--desk); }
+  body.in-app .brand p { display: none; }          /* 앱에선 부제가 자리만 먹는다 */
+  body.in-app .top-in { padding-block: 8px; }
+  body.in-app .tabs { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; height: var(--tabbar);
+    background: var(--paper); border-top: 1px solid var(--line); justify-content: space-around; gap: 0;
+    padding: 4px max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px)); }
+  body.in-app .tab { flex: 1; flex-direction: column; justify-content: center; gap: 3px; font-size: 12.5px; padding: 6px; }
+  body.in-app .tab:hover { background: none; }
+  body.in-app .tab[aria-current="page"] { background: none; box-shadow: none; color: var(--omr); }
+  body.in-app .tab .cnt { position: absolute; top: 2px; left: calc(50% + 10px); }
+  body.in-app .wrap { padding-bottom: calc(var(--tabbar) + 32px); }
+  body.in-app[data-view="exam"] .wrap { padding-bottom: calc(var(--tabbar) + var(--mbar) + 40px); }
+  body.in-app .foot-links { padding-bottom: 12px; }
+}
+
+/* 아이패드 폭(721~960px): 1단으로 떨어뜨리지 말고 2단을 유지한다.
+   자료함이 왼쪽, 조건·보내기가 오른쪽. 세로로 길게 늘어서는 것보다 한눈에 들어온다. */
+@media (min-width: 721px) and (max-width: 960px) {
+  .make { grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
+  .step { padding: 20px 18px; }
+  .send { padding: 18px 16px; }
+}
+/* 손글씨는 애플펜슬 쓰는 패드에서 제일 쓸모 있다. 앱이고 화면이 넓으면 더 크게 */
+@media (min-width: 721px) {
+  body.in-app .inkpad-canvas { height: 240px; }
+}
+
 .sheet-tools { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 
 /* 목록의 취소·삭제·다시 */
