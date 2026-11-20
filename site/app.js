@@ -1335,13 +1335,82 @@
     if (!d) { refresh(); return; }
     curDoc = d;
     curExamId = id;
+    store("gichul.doc", id);   // 새로고침해도 보던 글로 돌아오게
     renderDoc();
     renderLib();
     go("doc");
   }
 
+  /* ---------- 요약·설명 고치기 ----------
+     "필요 없는 부분은 지우고 고쳐 쓰고 싶다"는 의견에서 나왔다.
+     고친 내용은 **이 기기에만** 둔다 — 링크를 받은 사람은 원래 글을 본다.
+     원본(exams.sections)은 건드리지 않아서 '원래대로'로 언제든 되돌릴 수 있다. */
+  const DOC_EDIT_KEY = "gichul.docEdits";
+  const loadDocEdits = () => load(DOC_EDIT_KEY, {});
+  const docRec = (id) => loadDocEdits()[id] || null;
+  const editedSections = (id) => { const r = docRec(id); return Array.isArray(r?.s) ? r.s : null; };
+  const editedTitle = (id) => docRec(id)?.t || null;
+  function saveDocEdit(id, secs, title) {
+    const all = loadDocEdits();
+    all[id] = { s: secs, t: title || null };
+    const keys = Object.keys(all);
+    while (keys.length > 20) delete all[keys.shift()];   // 오래된 것부터 버린다
+    store(DOC_EDIT_KEY, all);
+  }
+  function clearDocEdit(id) { const all = loadDocEdits(); delete all[id]; store(DOC_EDIT_KEY, all); }
+
+  let docEdit = false;
+
   function docSections(d) {
+    const mine = d?.id ? editedSections(d.id) : null;
+    if (mine) return mine;
     return Array.isArray(d?.sections) ? d.sections : [];
+  }
+  const docEdited = (d) => !!(d?.id && editedSections(d.id));
+
+  /** 지금 보고 있는 글을 고친다. 원본을 베껴 두고 그 사본만 바꾼다 */
+  const docTitle = (d) => (d?.id && editedTitle(d.id)) || d?.title || "";
+  function editDoc(change, title) {
+    const d = curDoc;
+    if (!d?.id) return;
+    const secs = JSON.parse(JSON.stringify(docSections(d)));
+    change(secs);
+    saveDocEdit(d.id, secs, title === undefined ? docTitle(d) : title);
+    renderDoc();
+  }
+  /** 고치는 중에만 글자를 직접 고칠 수 있게 (수식은 원문 그대로 보여 줘야 고칠 수 있다) */
+  function docField(tag, attrs, value, set) {
+    const n = el(tag, { ...attrs, text: value });
+    if (!docEdit) return n;
+    n.contentEditable = "plaintext-only";
+    if (n.contentEditable !== "plaintext-only") n.contentEditable = "true";  // 사파리 옛 버전
+    n.spellcheck = false;
+    n.classList.add("doc-ed");
+    n.addEventListener("blur", () => {
+      const v = n.textContent.replace(/\s+$/, "");
+      if (v !== value) editDoc((secs) => set(secs, v));
+    });
+    return n;
+  }
+  /** 제목 칸. sections 와 저장하는 자리가 달라 따로 둔다 */
+  function docTitleEl(d, kindName) {
+    const now = docTitle(d) || kindName;
+    const n = el("h2", { text: now });
+    if (!docEdit) return n;
+    n.contentEditable = "plaintext-only";
+    if (n.contentEditable !== "plaintext-only") n.contentEditable = "true";
+    n.spellcheck = false;
+    n.classList.add("doc-ed");
+    n.addEventListener("blur", () => {
+      const v = n.textContent.replace(/\s+$/, "");
+      if (v && v !== now) editDoc((x) => x, v);
+    });
+    return n;
+  }
+
+  /** 줄 하나(요점·용어·공식)를 지우는 × 단추 */
+  function docDrop(label, run) {
+    return el("button", { type: "button", class: "doc-x", title: label, "aria-label": label, text: "×", onclick: run });
   }
 
   function renderDoc() {
@@ -1350,35 +1419,58 @@
     const kindName = KIND_LABEL[d.kind] || "정리";
     const body = $("docBody");
 
+    const secs = docSections(d);
+    const line = (sec, i, key, label) => sec[key]
+      ? el("p", { class: "doc-line" },
+          label ? el("b", { text: label }) : null,
+          docField("span", null, String(sec[key]), (ss, v) => { ss[i][key] = v; }),
+          docEdit ? docDrop(label ? label.replace(": ", "") + " 지우기" : "이 문단 지우기",
+            () => editDoc((ss) => { delete ss[i][key]; })) : null)
+      : null;
+    const listOf = (sec, i, key, cls, draw) => Array.isArray(sec[key]) && sec[key].length
+      ? el("ul", cls ? { class: cls } : null, ...sec[key].map((t, k) =>
+          el("li", null, ...draw(t, i, k), docEdit ? docDrop("이 줄 지우기",
+            () => editDoc((ss) => { ss[i][key].splice(k, 1); if (!ss[i][key].length) delete ss[i][key]; })) : null)))
+      : null;
+
     body.replaceChildren(
-      el("span", { class: "tag", text: kindName }),
-      el("h2", { text: d.title || kindName }),
+      el("div", { class: "doc-edit-bar" },
+        el("button", { type: "button", class: "btn" + (docEdit ? " primary" : ""),
+          text: docEdit ? "다 고쳤어요" : "고치기",
+          onclick: () => { docEdit = !docEdit; renderDoc(); } }),
+        docEdit ? el("span", { class: "doc-edit-tip", text: "글자를 눌러 고치고, ×로 지워요. 고친 내용은 이 기기에만 남아요" }) : null,
+        docEdited(d) ? confirmButton("원래대로", "고친 내용을 버리고 처음 글로 되돌릴까요?",
+          () => { clearDocEdit(d.id); docEdit = false; renderDoc(); setStatus("처음 글로 되돌렸어요."); }) : null),
+      el("span", { class: "tag", text: kindName + (docEdited(d) ? " · 고친 글" : "") }),
+      docTitleEl(d, kindName),
       el("p", { class: "doc-sub", text: [d.subject, shortDate(d.created_at)].filter(Boolean).join(" · ") }),
-      ...docSections(d).map((sec) => el("section", null,
-        el("h3", { text: sec.heading || "" }),
+      ...secs.map((sec, i) => el("section", null,
+        el("div", { class: "doc-sec-head" },
+          docField("h3", null, sec.heading || "", (ss, v) => { ss[i].heading = v; }),
+          docEdit ? el("button", { type: "button", class: "link doc-drop", text: "이 꼭지 지우기",
+            onclick: () => editDoc((ss) => { ss.splice(i, 1); }) }) : null),
         // 요약: 요점 · 용어 · 공식
-        Array.isArray(sec.points) && sec.points.length
-          ? el("ul", null, ...sec.points.map((t) => el("li", { text: String(t) }))) : null,
-        Array.isArray(sec.terms) && sec.terms.length
-          ? el("ul", { class: "terms" }, ...sec.terms.map((t) =>
-              el("li", null, el("b", { text: (t?.term || "") + ":" }), el("span", { text: t?.meaning || "" })))) : null,
-        Array.isArray(sec.formulas) && sec.formulas.length
-          ? el("ul", { class: "formulas" }, ...sec.formulas.map((t) => el("li", { text: String(t) }))) : null,
+        listOf(sec, i, "points", null, (t, i2, k) => [docField("span", null, String(t), (ss, v) => { ss[i2].points[k] = v; })]),
+        listOf(sec, i, "terms", "terms", (t, i2, k) => [
+          docField("b", null, (t?.term || "") + (docEdit ? "" : ":"), (ss, v) => { ss[i2].terms[k].term = v.replace(/:$/, ""); }),
+          docField("span", null, t?.meaning || "", (ss, v) => { ss[i2].terms[k].meaning = v; })]),
+        listOf(sec, i, "formulas", "formulas", (t, i2, k) => [docField("span", null, String(t), (ss, v) => { ss[i2].formulas[k] = v; })]),
         // 설명: 본문 · 왜 · 예시 · 헷갈리는 지점
-        sec.body ? el("p", { text: String(sec.body) }) : null,
-        sec.why ? el("p", null, el("b", { text: "왜 그런가: " }), el("span", { text: String(sec.why) })) : null,
-        sec.example ? el("p", null, el("b", { text: "예시: " }), el("span", { text: String(sec.example) })) : null,
-        sec.pitfall ? el("p", null, el("b", { text: "헷갈리기 쉬운 곳: " }), el("span", { text: String(sec.pitfall) })) : null,
+        line(sec, i, "body", ""),
+        line(sec, i, "why", "왜 그런가: "),
+        line(sec, i, "example", "예시: "),
+        line(sec, i, "pitfall", "헷갈리기 쉬운 곳: "),
         sec.source ? el("p", { class: "src", text: sec.source }) : null))
     );
-    renderMath(body);
+    // 고치는 중에는 수식을 원문 그대로 둔다 (렌더된 수식은 고칠 수 없다)
+    if (!docEdit) renderMath(body);
   }
 
   /** 텍스트 파일·공유용 본문 */
   function docText() {
     const d = curDoc;
     if (!d) return "";
-    const out = [d.title || "", d.subject || "", ""];
+    const out = [docTitle(d) || "", d.subject || "", ""];
     for (const sec of docSections(d)) {
       out.push("# " + (sec.heading || ""));
       for (const t of sec.points || []) out.push("- " + t);
@@ -2667,7 +2759,9 @@
     const url = examLink(curDoc.id);
     const kindName = KIND_LABEL[curDoc.kind] || "정리";
     if (inApp) { await native("share", { url, title: curDoc.title || ("기추리 " + kindName) }); return; }
-    try { await navigator.clipboard.writeText(url); setStatus(`${kindName} 링크를 복사했어요. 받은 사람은 이 링크로만 열 수 있어요.`); }
+    // 고친 내용은 이 기기에만 있어서 링크로는 처음 글이 간다 — 헷갈리지 않게 알려 준다
+    const note = docEdited(curDoc) ? " 고친 내용은 이 기기에만 있어서, 링크에는 처음 글이 담겨요." : "";
+    try { await navigator.clipboard.writeText(url); setStatus(`${kindName} 링크를 복사했어요. 받은 사람은 이 링크로만 열 수 있어요.${note}`); }
     catch (e) { setStatus("복사하지 못했어요. 이 주소를 직접 복사하세요: " + url); }
   });
   on("docSave", "click", () => {
@@ -2743,5 +2837,10 @@
     const h = location.hash.slice(1);
     show(VIEWS.includes(h) ? h : state.timer ? "exam" : "make");
   }
-  refresh().then(openFromLink);
+  // 요약·설명을 보다가 새로고침하면 curDoc 이 비어 빈 화면이 됐다. 문제집을 받아 온 뒤 보던 글을 다시 연다
+  refresh().then(() => {
+    const last = load("gichul.doc", null);
+    if (location.hash.slice(1) === "doc" && !curDoc && last && isDoc(exams.find((x) => x.id === last))) openDoc(last);
+    return openFromLink();
+  });
 })();

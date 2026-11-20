@@ -569,7 +569,7 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .doc-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 760px; margin: 0 auto 32px; }
 @media print {
   .doc section { break-inside: avoid; border: 0; padding: 0 0 8px; background: none; }
-  .doc-actions, .back { display: none; }
+  .doc-actions, .back, .doc-edit-bar, .doc-x, .doc-drop { display: none; }
 }
 .foot-links a[hidden] + span { display: none; } /* 숨긴 링크 뒤 구분점도 숨김 */
 
@@ -599,6 +599,18 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .mathpad button:hover { background: var(--line); }
 .mathpad button:active { transform: translateY(1px); }
 @media print { .mathpad, .mathpad-toggle { display: none; } }
+
+/* 요약·설명 고치기 */
+.doc-edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; }
+.doc-edit-tip { color: var(--muted); font-size: 12px; }
+.doc-ed { outline: 1px dashed var(--line); outline-offset: 4px; border-radius: 4px; min-width: 2em; }
+.doc-ed:focus { outline: 2px solid var(--omr); }
+.doc-sec-head { display: flex; align-items: baseline; gap: 10px; }
+.doc-sec-head h3 { flex: 1 1 auto; min-width: 0; }
+.doc-drop { flex: 0 0 auto; font-size: 12px; }
+.doc-x { margin-left: 6px; border: 0; background: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.doc-x:hover { color: var(--wrong, #c53030); }
+.doc-line { display: flex; align-items: baseline; gap: 4px; }
 
 /* 복습 알림 스위치 (앱에서만 보임) */
 .review-push { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 13px; cursor: pointer; }
