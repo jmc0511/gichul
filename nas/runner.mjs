@@ -311,6 +311,7 @@ const FIX_RULE = [
   "  지문이 딸린 문제면 passage·passage_id·passage_lead 를 **원래 값 그대로** 다시 써 주세요. 빠뜨리면 지문이 사라집니다.",
   "  mc는 보기 5개·answer 1~5, ox는 \"O\"/\"X\", short·essay는 모범답안 문자열. 고친 뒤 보기 5개를 자료와 다시 대조하세요.",
   "  단답형이면 answer_alt(같은 뜻으로 인정할 다른 표기 1~3개)도 **원래 값 그대로** 다시 써 주세요. 빠뜨리면 비슷한 답이 틀린 걸로 처리됩니다.",
+  "  논술 문항이면 limit(답안 글자 수)도 **원래 값 그대로** 다시 써 주세요. 빠뜨리면 답안칸이 짧아집니다.",
   "- 신고가 오해이고 문제가 맞으면 verdict는 \"ok\"로 하고 question은 쓰지 마세요.",
   "- summary에는 관리자가 읽을 한국어 한두 문장으로 무엇이 틀렸고 어떻게 고쳤는지(또는 왜 문제없는지) 쓰세요.",
   '형식: {"verdict":"fixed","summary":"…","question":{"type":"mc","question":"…","choices":["…","…","…","…","…"],"answer":2,"explanation":"…","source":"…","points":3}}',

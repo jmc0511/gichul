@@ -125,6 +125,9 @@
             <div class="field" id="countField">
               <span class="lbl">문항 수</span>
               <div class="seg" role="radiogroup" aria-label="문항 수">
+                <label class="few" hidden><input type="radio" name="count" id="c1" value="1"><span class="num">1</span></label>
+                <label class="few" hidden><input type="radio" name="count" id="c2" value="2"><span class="num">2</span></label>
+                <label class="few" hidden><input type="radio" name="count" id="c3" value="3"><span class="num">3</span></label>
                 <label><input type="radio" name="count" id="c5" value="5"><span class="num">5</span></label>
                 <label><input type="radio" name="count" id="c10" value="10" checked><span class="num">10</span></label>
                 <label><input type="radio" name="count" id="c15" value="15"><span class="num">15</span></label>
@@ -138,7 +141,17 @@
                 <label><input type="checkbox" name="type" id="t-ox" value="ox"><span>O / X</span></label>
                 <label><input type="checkbox" name="type" id="t-short" value="short" checked><span>단답형</span></label>
                 <label><input type="checkbox" name="type" id="t-essay" value="essay"><span>서술형</span></label>
+                <label><input type="checkbox" name="type" id="t-long" value="essay_long"><span>논술</span></label>
               </div>
+            </div>
+            <div class="field" id="longField" hidden>
+              <span class="lbl">논술 분량 <small>제시문을 읽고 한 편을 쓰는 문제예요</small></span>
+              <div class="seg" role="radiogroup" aria-label="논술 분량">
+                <label><input type="radio" name="longLen" id="g600" value="600"><span>600자</span></label>
+                <label><input type="radio" name="longLen" id="g1000" value="1000" checked><span>1000자</span></label>
+                <label><input type="radio" name="longLen" id="g1500" value="1500"><span>1500자</span></label>
+              </div>
+              <p class="hint">논제는 1~2개가 적당해요. 문항 수를 그에 맞춰 주세요.</p>
             </div>
             <div class="field" id="levelField">
               <span class="lbl">난이도 <small>여러 개 고르면 섞어서</small></span>
