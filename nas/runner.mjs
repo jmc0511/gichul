@@ -265,7 +265,7 @@ async function handle(id) {
     const onText = (text) => {
       // 시험지는 문항 수, 요약·설명은 항목(heading) 수를 센다
       const n = (text.match(isExam ? /"question"\s*:/g : /"heading"\s*:/g) || []).length;
-      if (n === lastCount) return;
+      if (n <= lastCount) return;   // 실시간 알림이 뒤섞여 와도 숫자가 거꾸로 가지 않게
       lastCount = n;
       const now = Date.now();
       const label = !isExam ? `${KIND_NAME[kind]} ${n}항목 작성 중`
