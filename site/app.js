@@ -103,6 +103,17 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" }
   }) : null;
 
+  /* ---------- 실시간 접속자 (데스크톱 위젯용) ----------
+     탭마다 "online" 채널에 들어가 있다가 닫으면 자동으로 빠짐. 보내는 건 페이지 경로와 들어온 시각뿐 */
+  if (sb) {
+    let sid = sessionStorage.getItem("sid");
+    if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem("sid", sid); }
+    const online = sb.channel("online", { config: { presence: { key: sid } } });
+    online.subscribe((s) => {
+      if (s === "SUBSCRIBED") online.track({ page: location.pathname + location.hash, at: Date.now() });
+    });
+  }
+
   /* ---------- iOS 앱(Flutter 웹뷰) 연결 ----------
      앱은 User-Agent 끝에 GichuriApp 을 붙이고, 웹뷰가 못 하는 일(구글·애플 로그인 창, 인쇄, 공유)을 대신 해 줌.
      앱 쪽 핸들러: oauth(url) → 돌아온 주소, print(), share({text, filename} | {url, title}) */
