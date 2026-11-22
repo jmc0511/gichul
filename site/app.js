@@ -11,9 +11,38 @@
   const PAST_NAME = /족보|기출|지난\s*시험|중간\s*고사|기말\s*고사|중간고사|기말고사|퀴즈|quiz|midterm|final|past\s*exam/i;
   const POLL_MS = 15000;   // 실시간 알림이 끊겼을 때를 위한 예비 확인
 
-  if (window.pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  /* ---------- 무거운 라이브러리는 쓸 때 받는다 ----------
+     PDF·PPTX·워드 읽기는 자료를 올려야 쓰는데, 예전에는 페이지를 열 때마다 전부 받았다.
+     셋을 합치면 800KB가 넘어서, 문제집만 보고 나가는 사람도 그대로 치렀다.
+     (워커 1MB 는 pdf.js 가 알아서 따로 띄우므로 <script> 로 받을 이유가 없어 index.html 에서 뺐다) */
+  const LIBS = {
+    pdfjs: { url: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
+      sri: "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e",
+      has: () => !!window.pdfjsLib,
+      after: () => { pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; } },
+    jszip: { url: "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
+      sri: "sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG",
+      has: () => !!window.JSZip },
+    mammoth: { url: "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.13.0/mammoth.browser.min.js",
+      sri: "sha512-5hAL8cCOeSztnaZ+3xjLAflXeSwJpGrdrH6McLq2Dtl0vfvCQw+jO9q652eMASTNAU8anRvrXnlW9QqzlfN2HA==",
+      has: () => !!window.mammoth }
+  };
+  const libLoading = {};
+  function need(name) {
+    const lib = LIBS[name];
+    if (lib.has()) return Promise.resolve();
+    if (libLoading[name]) return libLoading[name];
+    libLoading[name] = new Promise((ok, no) => {
+      const el2 = document.createElement("script");
+      el2.src = lib.url; el2.integrity = lib.sri; el2.crossOrigin = "anonymous";
+      el2.onload = () => { try { lib.after?.(); } catch (e) {} ok(); };
+      el2.onerror = () => { libLoading[name] = null; no(new Error("no " + name)); };
+      document.head.append(el2);
+    });
+    return libLoading[name];
   }
+  // 이미 페이지에 들어 있던 판(캐시된 옛 HTML)이면 그대로 쓴다
+  if (window.pdfjsLib) LIBS.pdfjs.after();
 
   // 둘러보기용 예시 시험지. 처음 온 사람이 자료를 올리기 전에 결과물을 먼저 본다.
   const EXAMPLES = [{
@@ -351,6 +380,7 @@
   // 다 읽은 PDF는 메모리에서 닫음 (아이패드에서 큰 PDF 여러 개를 열어 두면 탭이 꺼짐).
   // 그림은 출제 요청을 보낼 때 파일에서 다시 열어 그 쪽만 그림
   async function readPdf(file) {
+    await need("pdfjs");
     const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
     const pages = [], visuals = [];
     try {
@@ -370,6 +400,7 @@
     return { pages, visuals, scanned: chars / Math.max(1, pages.length) < 40 };
   }
   async function renderPdfFilePage(file, n) {
+    await need("pdfjs");
     const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
     try { return await renderPdfPage(pdf, n); } finally { pdf.destroy(); }
   }
@@ -436,6 +467,7 @@
     return out.join("\n");
   }
   async function readPptx(file) {
+    await need("jszip");
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
     const slides = Object.keys(zip.files)
       .map((n) => { const m = n.match(/^ppt\/slides\/slide(\d+)\.xml$/); return m ? { n, i: +m[1] } : null; })
@@ -508,7 +540,7 @@
     return out.filter(Boolean).join("\n\n");
   }
   async function readDocx(file) {
-    if (!window.mammoth) throw new Error("no mammoth");
+    await need("mammoth");
     const { value } = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
     const box = document.createElement("div");
     box.innerHTML = value;
@@ -598,14 +630,12 @@
     item.loading = true; renderFiles();
     try {
       if (isPptx(file)) {
-        if (!window.JSZip) throw new Error("no jszip");
         Object.assign(item, await readPptx(file));
       } else if (isDocx(file)) {
         Object.assign(item, await readDocx(file));
       } else if (isImage(file)) {
         Object.assign(item, await readImage(file));
       } else {
-        if (!window.pdfjsLib) throw new Error("no pdfjs");
         Object.assign(item, await readPdf(file));
       }
       item.loading = false;
