@@ -1323,6 +1323,17 @@
     examBack = "book";
     renderAll(); go("exam");
   }
+  /** 먼저 풀고 있던 시험지가 완성되면 진짜 시험지로 바꿔 끼운다 (쓴 답은 그대로) */
+  function swapLive(id, examId) {
+    if (state.live !== id) return;
+    state.live = null;
+    if (!examId) { setStatus("시험지를 만들지 못했어요. 다시 시도해 주세요.", true); renderAll(); return; }
+    const keep = state.answers;
+    openExam(examId);
+    state.answers = keep; persist(); renderAll();
+    setStatus("시험지가 다 됐어요. 쓰던 답은 그대로 두었어요.");
+  }
+
   /** 받은 문항이 늘면 보고 있는 화면도 늘려 준다 (답과 스크롤은 그대로) */
   function growLive(id) {
     if (state.live !== id) return;
@@ -1360,8 +1371,11 @@
         if (payload.status) r.status = payload.status;
         if (payload.progress !== undefined) r.progress = payload.progress;
         const grew = takePartial(id, payload);
-        if (payload.status === "done" || payload.status === "error") { livePartial.delete(id); refresh(); }
-        else { renderLib(); if (grew) growLive(id); }
+        if (payload.status === "done" || payload.status === "error") {
+          livePartial.delete(id);
+          const wasLive = state.live === id;
+          refresh().then(() => { if (wasLive) swapLive(id, payload.status === "done" ? payload.exam_id : null); });
+        } else { renderLib(); if (grew) growLive(id); }
       }).subscribe();
       channels.set(id, ch);
     }
@@ -1387,18 +1401,8 @@
         const ex = await sb.rpc("get_exams", { ids: examIds });
         if (!ex.error) exams = ex.data || [];
       }
-      // 먼저 풀고 있던 시험지가 완성되면 진짜 시험지로 바꿔 끼운다 (쓴 답은 그대로)
-      for (const r of finished) {
-        if (state.live === r.id) {
-          state.live = null;
-          if (r.status === "done" && r.exam_id) {
-            const keep = state.answers;
-            openExam(r.exam_id);
-            state.answers = keep; persist(); renderAll();
-            setStatus("시험지가 다 됐어요. 쓰던 답은 그대로 두었어요.");
-          } else setStatus("시험지를 만들지 못했어요. 다시 시도해 주세요.", true);
-        }
-      }
+      // 실시간 알림이 끊겼을 때를 위한 길 (실시간으로 왔으면 그쪽에서 이미 바꿔 끼웠다)
+      for (const r of finished) swapLive(r.id, r.status === "done" ? r.exam_id : null);
       for (const r of finished) announceFinished(r);
     } catch (e) {}
     renderLib();
