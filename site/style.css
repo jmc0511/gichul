@@ -655,6 +655,12 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 .review-push { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 13px; cursor: pointer; }
 .review-push input { width: 18px; height: 18px; accent-color: var(--omr); }
 
+/* 아직 쓰는 중인 시험지를 먼저 풀 때 */
+.ex-flag.live { display: inline-flex; align-items: center; gap: 7px; }
+.ex-flag.live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--omr); animation: livedot 1.2s ease-in-out infinite; }
+@keyframes livedot { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .ex-flag.live .dot { animation: none; } }
+
 /* 시험 범위 고르기 */
 .file-acts { display: flex; align-items: center; gap: 8px; }
 .range-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 13px; }

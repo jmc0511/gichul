@@ -282,7 +282,7 @@
   function load(key, fallback) { try { const v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v; } catch (e) { return fallback; } }
   // 시험지를 바꾸거나 처음부터 다시 풀 때: 답·채점·시험 모드·순위를 모두 비움
   function resetRun() {
-    state.answers = {}; state.self = {}; state.auto = {}; state.open = {}; state.graded = false;
+    state.answers = {}; state.self = {}; state.auto = {}; state.open = {}; state.graded = false; state.live = null;
     state.timer = null; state.timerPick = false; state.elapsed = null; state.reportOpen = {}; state.rank = null;
     clearInterval(tickTimer);
   }
@@ -1298,6 +1298,44 @@
     return b;
   }
 
+  /* ---------- 쓰는 중인 시험지 미리 보기 ----------
+     출제 시간은 출력 글자 수가 거의 전부라(10문항 약 1분), 다 끝나기를 기다리면 1번 문제도 1분 뒤에 본다.
+     처리기가 다 쓴 문항부터 실시간으로 보내 주므로, 받는 대로 쌓아 두고 먼저 풀 수 있게 한다.
+     답은 그대로 두고 완성되면 진짜 시험지로 바꿔 끼운다 (문항 차례가 바뀌지 않아 번호가 어긋나지 않는다). */
+  const livePartial = new Map();   // 요청 id → { title, questions }
+  function takePartial(id, payload) {
+    if (!Array.isArray(payload?.partial) || !payload.partial.length) return false;
+    const box = livePartial.get(id) || { title: "", questions: [] };
+    if (payload.title) box.title = payload.title;
+    const at = Number.isInteger(payload.from) ? payload.from : box.questions.length;
+    for (let k = 0; k < payload.partial.length; k++) box.questions[at + k] = payload.partial[k];
+    livePartial.set(id, box);
+    return true;
+  }
+  /** 지금까지 받은 문항으로 시험지 화면을 연다 */
+  function openLive(id) {
+    const box = livePartial.get(id);
+    if (!box?.questions.length) return;
+    const keep = state.live === id ? state.answers : {};
+    state.exam = normalize({ title: box.title || "쓰는 중인 시험지", subject: "", questions: box.questions.filter(Boolean) });
+    state.isExample = false; state.live = id; curExamId = null;
+    state.answers = keep; state.self = {}; state.graded = false; state.open = {};
+    examBack = "book";
+    renderAll(); go("exam");
+  }
+  /** 받은 문항이 늘면 보고 있는 화면도 늘려 준다 (답과 스크롤은 그대로) */
+  function growLive(id) {
+    if (state.live !== id) return;
+    const box = livePartial.get(id);
+    const have = state.exam?.questions?.length || 0;
+    const got = box.questions.filter(Boolean).length;
+    if (got <= have) return;
+    const y = window.scrollY;
+    state.exam = normalize({ title: box.title || state.exam.title, subject: "", questions: box.questions.filter(Boolean) });
+    renderAll();
+    window.scrollTo(0, y);
+  }
+
   /* ---------- 실시간 알림 ---------- */
   // 처리기에게 "새 요청 있음"을 바로 알림 (실패해도 처리기가 주기적으로 확인함)
   function notifyWorker(event = "new") {
@@ -1321,8 +1359,9 @@
         if (!r || !payload) return;
         if (payload.status) r.status = payload.status;
         if (payload.progress !== undefined) r.progress = payload.progress;
-        if (payload.status === "done" || payload.status === "error") refresh();
-        else renderLib();
+        const grew = takePartial(id, payload);
+        if (payload.status === "done" || payload.status === "error") { livePartial.delete(id); refresh(); }
+        else { renderLib(); if (grew) growLive(id); }
       }).subscribe();
       channels.set(id, ch);
     }
@@ -1347,6 +1386,18 @@
       if (examIds.length) {
         const ex = await sb.rpc("get_exams", { ids: examIds });
         if (!ex.error) exams = ex.data || [];
+      }
+      // 먼저 풀고 있던 시험지가 완성되면 진짜 시험지로 바꿔 끼운다 (쓴 답은 그대로)
+      for (const r of finished) {
+        if (state.live === r.id) {
+          state.live = null;
+          if (r.status === "done" && r.exam_id) {
+            const keep = state.answers;
+            openExam(r.exam_id);
+            state.answers = keep; persist(); renderAll();
+            setStatus("시험지가 다 됐어요. 쓰던 답은 그대로 두었어요.");
+          } else setStatus("시험지를 만들지 못했어요. 다시 시도해 주세요.", true);
+        }
       }
       for (const r of finished) announceFinished(r);
     } catch (e) {}
@@ -1689,7 +1740,11 @@
           el("span", { class: "t", title: name, text: (r.retry_of ? "↻ " : "") + name }),
           el("span", { class: "s", text: when(r.created_at) + (r.status === "error" && r.error ? " · " + r.error : "") })),
         el("span", { class: "pill " + (r.status || "pending"), text: (r.status === "working" && r.progress) || STATUS[r.status] || "대기 중" }),
-        el("span", { class: "acts" }, r.status === "error" && r.reusable && r.regen_exam == null ? retryButton(r, "다시 시도", r.kind || "exam") : null, action),
+        el("span", { class: "acts" },
+          livePartial.get(r.id)?.questions.filter(Boolean).length
+            ? el("button", { type: "button", class: "link retry", text: `${livePartial.get(r.id).questions.filter(Boolean).length}문항 먼저 풀기`, onclick: () => openLive(r.id) })
+            : null,
+          r.status === "error" && r.reusable && r.regen_exam == null ? retryButton(r, "다시 시도", r.kind || "exam") : null, action),
         live ? el("div", { class: "bar" + (r.status === "pending" ? " wait" : "") }, el("i", { style: `width:${progressPct(r)}%` })) : null);
     }));
 
@@ -2049,6 +2104,10 @@
     const total = ex.questions.reduce((a, q) => a + q.points, 0);
     const nodes = [];
     if (state.isExample) nodes.push(el("div", { class: "ex-flag", text: "예시 시험지 · 자료를 올려 내 자료로 출제하세요" }));
+    // 아직 쓰는 중인 시험지를 먼저 풀고 있는 경우
+    if (state.live) nodes.push(el("div", { class: "ex-flag live" },
+      el("span", { class: "dot", "aria-hidden": "true" }),
+      `아직 쓰는 중이에요 · 지금까지 ${state.exam?.questions?.length || 0}문항 · 다 되면 저절로 이어집니다`));
     const tools = [];
     if (!state.graded && !state.timer) tools.push(el("button", { type: "button", class: "btn", text: "⏱ 시험 모드", "aria-expanded": state.timerPick ? "true" : "false", onclick: () => { state.timerPick = !state.timerPick; renderSheet(); } }));
     if (realExam()) tools.push(el("button", { type: "button", class: "btn", text: "링크 복사", onclick: copyLink }));
@@ -2716,6 +2775,9 @@
     }
     $("grade").textContent = state.graded ? "다시 풀기" : state.timer ? "시험 끝내기" : "채점하기";
     $("mGrade").textContent = $("grade").textContent;
+    // 아직 다 안 쓴 시험지는 채점할 수 없다 (뒤 문항이 없는 채로 점수가 나와 버린다)
+    $("grade").disabled = $("mGrade").disabled = !!state.live;
+    $("grade").title = $("mGrade").title = state.live ? "시험지를 다 쓴 뒤에 채점할 수 있어요" : "";
     const prog = $("mProg");
     if (state.graded) prog.replaceChildren("점수 ", el("b", { text: String(s.got) }), ` / ${s.total}점`);
     else if (state.timer) prog.replaceChildren("⏱ ", el("b", { class: "timer-left", text: timeLeft() }), ` · ${$("scoreBig").textContent}`);

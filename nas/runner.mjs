@@ -69,6 +69,40 @@ function askClaude(content, onText, onSpawn, timeout = RUN_TIMEOUT) {
   });
 }
 
+/* 쓰는 중인 JSON 에서 **다 쓴 문항만** 꺼낸다.
+   출제는 출력 글자 수가 곧 시간이라(10문항 약 1분), 다 끝날 때까지 기다리면 1번 문제도 1분 뒤에 본다.
+   완성된 것부터 사이트로 흘려보내면 실제 시간은 그대로지만 10초쯤부터 풀기 시작할 수 있다. */
+function partialQuestions(text) {
+  const key = text.indexOf('"questions"');
+  if (key < 0) return [];
+  const start = text.indexOf("[", key);
+  if (start < 0) return [];
+  const out = [];
+  let depth = 0, from = -1, str = false, esc = false;
+  for (let i = start + 1; i < text.length; i++) {
+    const c = text[i];
+    if (esc) { esc = false; continue; }
+    if (c === "\\") { esc = true; continue; }
+    if (c === '"') { str = !str; continue; }
+    if (str) continue;
+    if (c === "{") { if (depth === 0) from = i; depth++; }
+    else if (c === "}") {
+      depth--;
+      if (depth === 0 && from >= 0) {
+        try { out.push(JSON.parse(text.slice(from, i + 1))); } catch (e) {}
+        from = -1;
+      }
+    } else if (c === "]" && depth === 0) break;
+  }
+  return out;
+}
+
+/** 쓰는 중인 JSON 에서 제목만 (미리 보기 머리글용) */
+function partialTitle(text) {
+  const m = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  try { return m ? JSON.parse('"' + m[1] + '"') : null; } catch (e) { return null; }
+}
+
 function parseJson(raw) {
   const s = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
   const a = s.indexOf("{"), b = s.lastIndexOf("}");
@@ -227,7 +261,7 @@ async function handle(id) {
     const nImg = content.length / 2;
     if (nImg) log(`[${short(id)}] 그림 ${nImg}장 함께 보냄`);
     content.push({ type: "text", text: `${RULES[kind]}\n\n${row.instructions}${retryNote}\n\n[공부자료 원문]\n${row.material}${nImg ? `\n\n[첨부 이미지] 위에 자료 속 그림 ${nImg}장을 붙였습니다. 본문의 "[이 쪽의 그림: 첨부 이미지 #n]" 표시와 이미지 이름으로 어느 쪽 그림인지 알 수 있습니다.` : ""}\n\n[다시 한 번] 위 형식의 JSON 하나만 출력하세요.` });
-    let lastShown = 0, lastDb = 0, lastCount = -1;
+    let lastShown = 0, lastDb = 0, lastCount = -1, sentQ = 0;
     const onText = (text) => {
       // 시험지는 문항 수, 요약·설명은 항목(heading) 수를 센다
       const n = (text.match(isExam ? /"question"\s*:/g : /"heading"\s*:/g) || []).length;
@@ -236,7 +270,16 @@ async function handle(id) {
       const now = Date.now();
       const label = !isExam ? `${KIND_NAME[kind]} ${n}항목 작성 중`
         : total ? `문항 ${Math.min(n, total)}/${total} 작성 중` : `문항 ${n}개 작성 중`;
-      if (now - lastShown > 800) { lastShown = now; broadcast("req-" + id, "update", { status: "working", progress: label }); }
+      if (now - lastShown > 800) {
+        lastShown = now;
+        // 새로 완성된 문항만 같이 보낸다 (시험지일 때만. 요약·설명은 통째로 보는 글이라 의미가 없다)
+        let fresh = null;
+        if (isExam && !regen) {
+          const done = partialQuestions(text);
+          if (done.length > sentQ) { fresh = done.slice(sentQ, sentQ + 5); sentQ = Math.min(done.length, sentQ + 5); }
+        }
+        broadcast("req-" + id, "update", { status: "working", progress: label, title: partialTitle(text), ...(fresh ? { partial: fresh, from: sentQ - fresh.length } : {}) });
+      }
       if (now - lastDb > 4000) { lastDb = now; setProgress(id, label).then((ok) => { if (!ok) cancel(); }).catch(() => {}); }
     };
 
