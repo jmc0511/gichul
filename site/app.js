@@ -1886,6 +1886,7 @@
      출제할 때 answer_alt 로 인정할 표기를 같이 받아 둔다(PROMPT-exam.md).
      **맞을 때만 자동으로 표시하고, 아니면 사람에게 넘긴다** — 기계가 틀렸다고 우기지 않게. */
   const normAns = (s) => String(s ?? "").normalize("NFKC").toLowerCase()
+    .replace(/^(a|an|the)\s+/, "")          // 영어 답의 관사: "the lucky charm" = "lucky charm"
     .replace(/\s+/g, "")
     .replace(/[.,·ㆍ・/\\'"`~!?()\[\]{}<>:;_\-–—]/g, "");
   function shortRight(user, q) {
