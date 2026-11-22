@@ -1196,17 +1196,29 @@
       const ready = activeFiles();
       const id = crypto.randomUUID();
 
-      // 그림을 먼저 올리고(처리기가 요청을 보자마자 쓸 수 있게) 요청을 넣음
-      const images = [];
-      for (const c of picked) {
-        setStatus(`그림 올리는 중… ${images.length + 1}/${picked.length}`);
-        const blob = await c.render();
-        if (!blob) continue;
-        const path = `${id}/${String(c.no).padStart(2, "0")}.jpg`;
-        const up = await sb.storage.from("request-images").upload(path, blob, { contentType: "image/jpeg", upsert: false });
-        if (up.error) throw up.error;
-        images.push({ path, label: `이미지 #${c.no} (${c.label})` });
-      }
+      // 그림을 먼저 올리고(처리기가 요청을 보자마자 쓸 수 있게) 요청을 넣음.
+      // 한 장씩 차례로 올리면 20장짜리에서 30초 넘게 걸린다 — 그동안 출제는 시작도 못 한다.
+      // 몇 장씩 한꺼번에 올리되, 쪽을 그리는 건 CPU 일이라 폰이 버벅이지 않게 4장으로 묶는다.
+      const AT_ONCE = 4;
+      const slots = new Array(picked.length).fill(null);
+      let doneN = 0, next = 0;
+      const worker = async () => {
+        for (;;) {
+          const k = next++;
+          if (k >= picked.length) return;
+          const c = picked[k];
+          const blob = await c.render();
+          doneN++;
+          setStatus(`그림 올리는 중… ${doneN}/${picked.length}`);
+          if (!blob) continue;
+          const path = `${id}/${String(c.no).padStart(2, "0")}.jpg`;
+          const up = await sb.storage.from("request-images").upload(path, blob, { contentType: "image/jpeg", upsert: false });
+          if (up.error) throw up.error;
+          slots[k] = { path, label: `이미지 #${c.no} (${c.label})` };
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(AT_ONCE, picked.length) }, worker));
+      const images = slots.filter(Boolean);   // 고른 차례(쪽 순서) 그대로
 
       setStatus("요청을 보내는 중…");
       const { error } = await sb.from("requests").insert({
