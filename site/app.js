@@ -531,6 +531,7 @@
     const cell = (td) => String(td.textContent || "").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
     for (const elm of node.children) {
       const tag = elm.tagName.toLowerCase();
+      if (tag === "script" || tag === "style") continue;   // 글자까지 자료에 섞이지 않게
       if (tag === "table") {
         const rows = [...elm.querySelectorAll("tr")].map((tr) => [...tr.children].map(cell));
         if (!rows.some((r) => r.some(Boolean))) continue;
@@ -553,9 +554,10 @@
   async function readDocx(file) {
     await need("mammoth");
     const { value } = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
-    const box = document.createElement("div");
-    box.innerHTML = value;
-    const text = docxNodeText(box);
+    // 남의 파일에서 나온 HTML 이라 innerHTML 에 넣지 않는다.
+    // DOMParser 는 따로 떨어진 문서로 파싱해서 스크립트도, 그림 불러오기도, onerror 도 일어나지 않는다.
+    const doc = new DOMParser().parseFromString(value, "text/html");
+    const text = docxNodeText(doc.body);
     // 제목 자리(\u0000)에서 끊고, 그래도 긴 덩이는 길이로 한 번 더 끊는다
     const pages = [];
     for (const part of text.split("\u0000").map((x) => x.trim()).filter(Boolean)) {
@@ -919,6 +921,7 @@
   }
   /* ---------- 쿠폰 코드 ---------- */
   const COUPON_MSG = {
+    too_many: "코드를 너무 여러 번 넣었어요. 내일 다시 해 주세요.",
     login_required: "쿠폰은 구글 로그인 후에 등록할 수 있어요.",
     empty: "코드를 입력해 주세요.",
     not_found: "없는 코드예요. 대소문자는 가리지 않으니 글자만 확인해 주세요.",
