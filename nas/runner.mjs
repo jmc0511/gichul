@@ -10,6 +10,10 @@ import { pending, claim, finish, failReq, setProgress, stillWanted, resetStale, 
 const INTERVAL = (parseInt(process.env.POLL_SECONDS, 10) || 30) * 1000;
 const MAX_PARALLEL = parseInt(process.env.MAX_PARALLEL, 10) || 3;
 const MODEL = process.env.CLAUDE_MODEL || "";
+// 사용자가 '빠르게'를 고르면 쓰는 모델. 기본은 꼼꼼하게(위 MODEL).
+// 평가셋 실측(지역사회복지론 61쪽, 10문항): opus-5-5 59초 / sonnet-5 83초 / haiku-4.5 40초.
+// 소넷은 오히려 느려서(글을 적게 쓰고도 51자/초) 빠른 쪽은 하이쿠를 쓴다.
+const FAST_MODEL = process.env.CLAUDE_FAST_MODEL || "claude-haiku-4-5-20251001";
 const RUN_TIMEOUT = 15 * 60 * 1000;
 // 출력 종류마다 규칙이 다르다 (시험지 · 요약 · 설명)
 const RULES = {
@@ -29,12 +33,12 @@ const short = (id) => id.slice(0, 8);
 
 /* ---------- Claude 한 번 호출, 글이 써지는 대로 onText ---------- */
 // content: Claude 메시지 내용 블록 배열 (글 + 그림)
-function askClaude(content, onText, onSpawn, timeout = RUN_TIMEOUT) {
+function askClaude(content, onText, onSpawn, timeout = RUN_TIMEOUT, model = MODEL) {
   return new Promise((resolve, reject) => {
     // 보안: 자료에 숨긴 지시문이 있어도 아무 도구도 못 쓰게 함
     // --tools "" = 기본 도구(명령 실행·파일 읽기 등) 전부 끔, --strict-mcp-config = 계정에 연결된 Google Drive 같은 외부 도구도 끔
     const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--max-turns", "1", "--tools", "", "--strict-mcp-config"];
-    if (MODEL) args.push("--model", MODEL);
+    if (model) args.push("--model", model);
     // Windows(PC 테스트)에서는 claude.cmd 라 shell 이 필요
     const p = spawn("claude", args, { cwd: process.env.WORK_DIR || "/work", stdio: ["pipe", "pipe", "inherit"], shell: process.platform === "win32" });
     onSpawn?.(p);
@@ -261,6 +265,9 @@ async function handle(id) {
     const nImg = content.length / 2;
     if (nImg) log(`[${short(id)}] 그림 ${nImg}장 함께 보냄`);
     content.push({ type: "text", text: `${RULES[kind]}\n\n${row.instructions}${retryNote}\n\n[공부자료 원문]\n${row.material}${nImg ? `\n\n[첨부 이미지] 위에 자료 속 그림 ${nImg}장을 붙였습니다. 본문의 "[이 쪽의 그림: 첨부 이미지 #n]" 표시와 이미지 이름으로 어느 쪽 그림인지 알 수 있습니다.` : ""}\n\n[다시 한 번] 위 형식의 JSON 하나만 출력하세요.` });
+    // 요청마다 모델이 다를 수 있다 ('빠르게'를 고른 요청은 가벼운 모델로)
+    const useModel = row.fast ? FAST_MODEL : MODEL;
+    if (row.fast) log(`[${short(id)}] 빠르게 (${FAST_MODEL})`);
     let lastShown = 0, lastDb = 0, lastCount = -1, sentQ = 0;
     const onText = (text) => {
       // 시험지는 문항 수, 요약·설명은 항목(heading) 수를 센다
@@ -286,7 +293,7 @@ async function handle(id) {
     let exam, lastErr;
     for (let attempt = 1; attempt <= 2 && !exam && !cancelled; attempt++) {
       try {
-        const out = await askClaude(content, onText, (p) => { proc = p; });
+        const out = await askClaude(content, onText, (p) => { proc = p; }, RUN_TIMEOUT, useModel);
         exam = isExam ? parseExam(out) : parseDoc(out);
       }
       catch (e) { lastErr = e; if (!cancelled) log(`[${short(id)}] ${attempt}번째 시도 실패: ${e.message}`); }

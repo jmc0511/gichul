@@ -868,6 +868,7 @@
     }
     // '자세히' 안에서 바꾼 것이 있으면 접힌 상태에서도 보이게
     const set = [];
+    if (checkedVals("speed")[0]?.value === "fast") set.push("빠르게");
     if ($("subject").value.trim()) set.push($("subject").value.trim());
     if (checkedVals("fig")[0]?.value === "off") set.push("그림 빼기");
     const lang = checkedVals("lang")[0];
@@ -1244,6 +1245,8 @@
         // dbText: PDF 글자에 섞인 널 문자·반쪽 이모지를 걸러낸다 (없으면 요청이 실패함)
         instructions: dbText(kind === "exam" ? buildInstructions() : buildDocInstructions(kind)),
         material: dbText(material),
+        // 사용자가 '빠르게'를 고르면 처리기가 가벼운 모델로 만든다
+        fast: (checkedVals("speed")[0]?.value || "careful") === "fast",
         images: images.length ? images : null
       });
       if (error) throw error;

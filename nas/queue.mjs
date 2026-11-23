@@ -37,7 +37,7 @@ export async function pending() {
 export async function claim(id) {
   const got = await call("PATCH", `/requests?id=eq.${id}&status=eq.pending`, { status: "working", progress: "자료 읽는 중", started_at: new Date().toISOString() });
   if (!got.length) return null;
-  const [row] = await call("GET", `/requests?id=eq.${id}&select=instructions,material,images,retry_of,regen_exam,regen_idx,kind`);
+  const [row] = await call("GET", `/requests?id=eq.${id}&select=instructions,material,images,retry_of,regen_exam,regen_idx,kind,fast`);
   return row;
 }
 
