@@ -12,6 +12,8 @@ services:
       # 보안: claude.ai 계정에 연결된 커넥터(Google Drive 등)를 처리기에서 쓰지 않음
       - ENABLE_CLAUDEAI_MCP_SERVERS=false
     volumes:
+      # 코드를 폴더째 연결한다. 파일을 덮어쓰고 '다시 시작'만 하면 반영된다(이미지 다시 만들 필요 없음)
+      - ./:/app/src:ro
       - work:/work
 
 volumes:
