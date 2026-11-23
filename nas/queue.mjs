@@ -35,7 +35,8 @@ export async function pending() {
 
 /** 요청을 '출제 중'으로 잡고 지시·자료를 돌려줌. 이미 다른 곳이 잡았으면 null */
 export async function claim(id) {
-  const got = await call("PATCH", `/requests?id=eq.${id}&status=eq.pending`, { status: "working", progress: "자료 읽는 중", started_at: new Date().toISOString() });
+  const now = new Date().toISOString();
+  const got = await call("PATCH", `/requests?id=eq.${id}&status=eq.pending`, { status: "working", progress: "자료 읽는 중", started_at: now, touched_at: now });
   if (!got.length) return null;
   const [row] = await call("GET", `/requests?id=eq.${id}&select=instructions,material,images,retry_of,regen_exam,regen_idx,kind,fast`);
   return row;
@@ -146,19 +147,19 @@ export async function deleteImages(paths) {
 
 /** 30분 넘게 '출제 중'에 멈춘 요청만 다시 대기로 돌림 (다른 처리기가 작업 중인 건 건드리지 않음) */
 /** 처리기가 중간에 죽어 '출제 중'으로 멈춘 요청을 다시 대기열로.
-    기준은 **집어 든 시각(started_at)** 이고 3분이다.
+    기준은 **마지막으로 손댄 시각(touched_at)** 이고 3분이다.
     created_at 기준 30분이던 때는, 재빌드로 끊긴 요청이 화면에서 30분 가까이 멈춰 있었다.
-    정상 출제는 길어야 4분이지만 진행 중이면 setProgress 가 started_at 을 밀어 주므로 멀쩡한 요청을 가로채지 않는다. */
+    돌고 있는 요청은 setProgress 가 touched_at 을 계속 밀어 주므로 걸리지 않는다. */
 export async function resetStale(minutes = 3) {
   const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
-  const rows = await call("PATCH", `/requests?status=eq.working&started_at=lt.${encodeURIComponent(cutoff)}`, { status: "pending", progress: null });
+  const rows = await call("PATCH", `/requests?status=eq.working&touched_at=lt.${encodeURIComponent(cutoff)}`, { status: "pending", progress: null });
   return rows.length;
 }
 
 /** 진행 상황 기록. 요청이 취소(삭제)됐으면 false */
 export async function setProgress(id, progress) {
-  // started_at 을 같이 밀어 둔다 — resetStale 이 "살아 있는 요청"과 "끊긴 요청"을 이걸로 가른다
-  const rows = await call("PATCH", `/requests?id=eq.${id}&status=eq.working`, { progress, started_at: new Date().toISOString() });
+  // touched_at 만 민다. started_at 을 밀면 finished_at - started_at 이 '걸린 시간'이 아니게 된다
+  const rows = await call("PATCH", `/requests?id=eq.${id}&status=eq.working`, { progress, touched_at: new Date().toISOString() });
   return rows.length > 0;
 }
 
