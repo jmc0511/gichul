@@ -573,7 +573,8 @@ async function check() {
   reviewPush();
   checkInk(); // 사람이 기다리는 일이라 출제보다 먼저
   try {
-    if (Date.now() - lastStaleCheck > 5 * 60 * 1000) {
+    // 멈춘 것 되살리기는 1분마다 본다 (5분이면 3분 기준이 무색해진다)
+    if (Date.now() - lastStaleCheck > 60 * 1000) {
       lastStaleCheck = Date.now();
       const n = await resetStale().catch(() => 0);
       if (n) log(`멈춰 있던 요청 ${n}개를 다시 대기열로`);

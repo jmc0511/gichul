@@ -145,15 +145,20 @@ export async function deleteImages(paths) {
 }
 
 /** 30분 넘게 '출제 중'에 멈춘 요청만 다시 대기로 돌림 (다른 처리기가 작업 중인 건 건드리지 않음) */
-export async function resetStale() {
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-  const rows = await call("PATCH", `/requests?status=eq.working&created_at=lt.${encodeURIComponent(cutoff)}`, { status: "pending", progress: null });
+/** 처리기가 중간에 죽어 '출제 중'으로 멈춘 요청을 다시 대기열로.
+    기준은 **집어 든 시각(started_at)** 이고 3분이다.
+    created_at 기준 30분이던 때는, 재빌드로 끊긴 요청이 화면에서 30분 가까이 멈춰 있었다.
+    정상 출제는 길어야 4분이지만 진행 중이면 setProgress 가 started_at 을 밀어 주므로 멀쩡한 요청을 가로채지 않는다. */
+export async function resetStale(minutes = 3) {
+  const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+  const rows = await call("PATCH", `/requests?status=eq.working&started_at=lt.${encodeURIComponent(cutoff)}`, { status: "pending", progress: null });
   return rows.length;
 }
 
 /** 진행 상황 기록. 요청이 취소(삭제)됐으면 false */
 export async function setProgress(id, progress) {
-  const rows = await call("PATCH", `/requests?id=eq.${id}&status=eq.working`, { progress });
+  // started_at 을 같이 밀어 둔다 — resetStale 이 "살아 있는 요청"과 "끊긴 요청"을 이걸로 가른다
+  const rows = await call("PATCH", `/requests?id=eq.${id}&status=eq.working`, { progress, started_at: new Date().toISOString() });
   return rows.length > 0;
 }
 
