@@ -113,6 +113,10 @@ button { cursor: pointer; }
 .files .past-t { border: 1px solid var(--line); background: none; color: var(--muted); font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .files .past-t:hover { border-color: var(--omr); color: var(--ink); }
 .files .past-t.on { background: var(--omr); border-color: var(--omr); color: #fff; }
+/* 범위 단추도 족보와 같은 모양 (안 맞춰 두면 브라우저 기본 네모 단추로 나온다) */
+.files .range-t { border: 1px solid var(--line); background: none; color: var(--muted); font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+.files .range-t:hover { border-color: var(--omr); color: var(--ink); }
+.files .range-t.on { background: var(--omr); border-color: var(--omr); color: #fff; }
 .files .x { border: 0; background: none; color: var(--muted); font-size: 12.5px; padding: 4px 2px; }
 .files .x:hover { color: var(--wrong); }
 .files-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
