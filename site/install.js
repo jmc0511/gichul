@@ -5,7 +5,7 @@
    내용을 바꿀 때는 index.html 의 글과 함께 아래 NOTICE_ID 도 바꾼다.
    그래야 전에 닫은 사람에게도 새 공지가 다시 보인다. */
 (function () {
-  const NOTICE_ID = "team08";
+  const NOTICE_ID = "final2026";
   const KEY = "gichul.noticeHide";
   const bar = document.getElementById("noticeBar");
   const close = document.getElementById("noticeClose");
