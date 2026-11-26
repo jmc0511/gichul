@@ -5,6 +5,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
+import { codeRev } from "./rev.mjs";
 import { pending, claim, finish, failReq, setProgress, stillWanted, resetStale, broadcast, downloadImage, uploadFigure, earlierQuestions, examQuestions, finishRegen, heartbeat, cleanup, openReports, claimReports, examSource, replaceQuestion, closeReports, resetStaleReports, inkPending, inkClaim, inkFinish, inkFail, inkResetStale, purgeInk, SUPABASE_URL, SUPABASE_SECRET } from "./queue.mjs";
 
 const INTERVAL = (parseInt(process.env.POLL_SECONDS, 10) || 30) * 1000;
@@ -25,6 +26,8 @@ const RULES = {
 const INK_RULE = readFileSync(new URL("./PROMPT-ink.md", import.meta.url), "utf8");
 // 글자 모드: 한자·가나·한글을 직접 써서 답하는 문제. 수식으로 바꾸면 안 된다
 const INK_TEXT_RULE = readFileSync(new URL("./PROMPT-ink-text.md", import.meta.url), "utf8");
+// 지금 올라가 있는 코드의 지문. 내 컴퓨터에서 `node nas/rev.mjs` 와 같은 값이어야 한다(rev.mjs 설명 참고)
+const REV = codeRev(new URL("./", import.meta.url));
 const INK_TIMEOUT = 90 * 1000;
 const MAX_INK = 2;
 const inkRunning = new Set();
@@ -486,7 +489,7 @@ async function housekeeping() {
   const now = Date.now();
   if (now - lastBeat > 5 * 60 * 1000) {
     lastBeat = now;
-    heartbeat({ running: running.size, max: MAX_PARALLEL, since: BOOTED, model: MODEL || "기본" }).catch((e) => log("상태 기록 실패:", e.message));
+    heartbeat({ running: running.size, max: MAX_PARALLEL, since: BOOTED, model: MODEL || "기본", rev: REV }).catch((e) => log("상태 기록 실패:", e.message));
   }
   // 시작 1분 뒤 한 번, 그다음은 하루에 한 번
   if (!lastCleanup) lastCleanup = now - 24 * 3600 * 1000 + 60 * 1000;
@@ -624,7 +627,7 @@ sb.channel("queue")
   .on("broadcast", { event: "ink" }, () => { checkInk(); })
   .subscribe((status) => log("실시간 알림:", status));
 
-log(`처리기 시작 (실시간 알림 + ${INTERVAL / 1000}초 간격 확인, 동시 ${MAX_PARALLEL}개${MODEL ? ", 모델 " + MODEL : ""})`);
+log(`처리기 시작 (실시간 알림 + ${INTERVAL / 1000}초 간격 확인, 동시 ${MAX_PARALLEL}개${MODEL ? ", 모델 " + MODEL : ""}) · 코드 ${REV}`);
 
 for (;;) {
   await check();
