@@ -2120,7 +2120,7 @@
     const items = el("ul", { class: "wrongs" }, ...list.map((w) => {
       const q = w.q || {};
       return el("li", { class: "wn" },
-        el("p", { class: "q-t", text: String(q.question || "").slice(0, 220) }),
+        el("p", { class: "q-t", text: plainU(q.question).slice(0, 220) }),
         el("div", { class: "tags" },
           isDue(w) ? el("span", { class: "tag due", text: "오늘 복습" }) : el("span", { class: "tag soon", text: `${day(w.due)} 복습` }),
           w.stage ? el("span", { class: "tag", text: `${w.stage}/${GRADUATE} 맞힘` }) : null,
@@ -2397,6 +2397,28 @@
     return [toggle, box];
   }
 
+  /* 문제 글의 <u>…</u> 만 진짜 밑줄로 바꾼다.
+     일본어 한자 읽기 문제처럼 "밑줄 친 말"을 묻는 시험은 밑줄이 문제의 일부다.
+     innerHTML 은 쓰지 않는다 — 태그를 직접 찾아 <u> 요소를 만들고 글자는 textContent 로 넣는다.
+     그 밖의 태그는 글자 그대로 남는다(없는 셈 치지 않는다). */
+  const U_RE = /<u>([\s\S]*?)<\/u>/gi;
+  function withU(s) {
+    const str = String(s ?? "");
+    if (!/<u>/i.test(str)) return [str];
+    const out = [];
+    let at = 0, m;
+    U_RE.lastIndex = 0;
+    while ((m = U_RE.exec(str))) {
+      if (m.index > at) out.push(str.slice(at, m.index));
+      out.push(el("u", { text: m[1] }));
+      at = m.index + m[0].length;
+    }
+    if (at < str.length) out.push(str.slice(at));
+    return out;
+  }
+  /** 글자만 필요할 때(인쇄 텍스트·목록·오답노트 열쇠) */
+  const plainU = (s) => String(s ?? "").replace(/<\/?u>/gi, "");
+
   /* 수식: $…$ 인라인, $$…$$ 블록 (KaTeX) */
   function renderMath(root) {
     if (!window.renderMathInElement) return;
@@ -2459,7 +2481,7 @@
     const art = el("article", { class: "q", id: "q" + i });
     art.append(el("p", { class: "q-text" },
       el("span", { class: "q-no", text: (i + 1) + "." }),
-      q.question + " ",
+      ...withU(q.question), " ",
       el("span", { class: "q-pts", text: `[${q.points}점]` }),
       el("span", { class: "q-type", text: typeName(q) }),
       q.area ? el("span", { class: "q-type", text: q.area }) : null,
@@ -2852,7 +2874,7 @@
     const ex = state.exam;
     const L = [ex.title, ex.subject ? "과목: " + ex.subject : "", ""];
     ex.questions.forEach((q, i) => {
-      L.push(`${i + 1}. ${q.area ? "[" + q.area + "] " : ""}${q.question} [${q.points}점]`);
+      L.push(`${i + 1}. ${q.area ? "[" + q.area + "] " : ""}${plainU(q.question)} [${q.points}점]`);
       if (q.figure) L.push("   (그림 있음 · 사이트에서 확인)");
       if (q.type === "mc") q.choices.forEach((c, k) => L.push(`   ${MARKS[k]} ${c}`));
       if (q.type === "ox") L.push("   ( O / X )");
