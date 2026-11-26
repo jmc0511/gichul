@@ -206,7 +206,7 @@ export async function inkPending() {
 export async function inkClaim(id) {
   const got = await call("PATCH", `/ink?id=eq.${id}&status=eq.pending`, { status: "working", started_at: new Date().toISOString() });
   if (!got.length) return null;
-  const [row] = await call("GET", `/ink?id=eq.${id}&select=png`);
+  const [row] = await call("GET", `/ink?id=eq.${id}&select=png,mode`);
   return row;
 }
 /** 끝나면 그림은 바로 비운다 (손글씨를 오래 들고 있을 이유가 없다) */

@@ -23,6 +23,8 @@ const RULES = {
 };
 // 손글씨 수식 인식은 출제와 성격이 다르다 — 사람이 화면 앞에서 기다리므로 짧게 끊는다
 const INK_RULE = readFileSync(new URL("./PROMPT-ink.md", import.meta.url), "utf8");
+// 글자 모드: 한자·가나·한글을 직접 써서 답하는 문제. 수식으로 바꾸면 안 된다
+const INK_TEXT_RULE = readFileSync(new URL("./PROMPT-ink-text.md", import.meta.url), "utf8");
 const INK_TIMEOUT = 90 * 1000;
 const MAX_INK = 2;
 const inkRunning = new Set();
@@ -505,17 +507,31 @@ function cleanLatex(raw) {
   if (t.length > 400) t = t.slice(0, 400);
   return t;
 }
+/** 글자 모드 정리: 설명이 섞여 와도 글자만 남긴다 (수식 기호는 벗기지 않는다 — 한자가 아니라 글자니까) */
+function cleanChars(raw) {
+  let t = String(raw).trim()
+    .replace(/^```[a-z]*\s*/i, "").replace(/```\s*$/, "")
+    .split("\n").map((x) => x.trim()).filter(Boolean)[0] || "";
+  t = t.replace(/^["'`\u300c\u300e]+|["'`\u300d\u300f]+$/g, "").trim();
+  if (t.length > 40) t = t.slice(0, 40);
+  return t;
+}
+
 async function handleInk(id) {
   inkRunning.add(id);
   try {
     const row = await inkClaim(id);
     if (!row) return; // 다른 처리기가 가져감
     const t0 = Date.now();
+    const asText = row.mode === "text";
     const content = [
       { type: "image", source: { type: "base64", media_type: "image/png", data: row.png } },
-      { type: "text", text: `${INK_RULE}\n\n[다시 한 번] LaTeX 한 줄만 출력하세요.` }
+      { type: "text", text: asText
+        ? `${INK_TEXT_RULE}\n\n[다시 한 번] 글자만 출력하세요.`
+        : `${INK_RULE}\n\n[다시 한 번] LaTeX 한 줄만 출력하세요.` }
     ];
-    const latex = cleanLatex(await askClaude(content, () => {}, null, INK_TIMEOUT));
+    const out = await askClaude(content, () => {}, null, INK_TIMEOUT);
+    const latex = asText ? cleanChars(out) : cleanLatex(out);
     if (!latex || latex === "?") {
       await inkFail(id, "글씨를 알아보지 못했어요");
       broadcast("ink-" + id, "done", { status: "error", error: "글씨를 알아보지 못했어요" });

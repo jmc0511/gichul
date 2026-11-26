@@ -1165,6 +1165,11 @@
         "      예: 「多くの人に拍手で迎えられた。」의 拍手 → はくしゅ / はくしゅう / ばくしゅ / ばくしゅう",
         "  (나) 한자 고르기 — 반대로 읽기를 주고 알맞은 한자를 고르게 합니다. 예: しんしゅく → 伸縮 / 紳縮 / 伸宿 / 紳宿",
         "  (다) 한 글자 채우기 — 문장의 빈칸에 들어갈 한자 한 글자를 고르게 합니다. 예: 雰囲（ ） → 気 / 機 / 感 / 観",
+        "  (라) **직접 쓰기** — 뜻과 읽기를 주고 글자를 **손으로 쓰게** 합니다. 보기를 주지 마세요.",
+        "      type 은 \"short\", answer 는 그 글자만, `\"write\": \"char\"` 를 넣으세요. 답이 한 글자면 한 글자, 숙어면 그대로.",
+        "      예: {\"type\":\"short\",\"question\":\"「불 화」에 해당하는 한자를 쓰시오.\",\"answer\":\"火\",\"write\":\"char\"}",
+        "      한자뿐 아니라 히라가나·가타카나·한글·알파벳에도 씁니다(예: 「ねこ를 가타카나로 쓰시오」 → ネコ).",
+        "      answer_alt 에는 같은 글자의 다른 표기(이체자, 가나 표기 흔들림)만 넣고, 뜻이 다른 글자는 넣지 마세요.",
         "  **오답 만드는 법이 이 영역의 전부입니다.**",
         "  - 읽기 오답: 장음 유무(しょ↔しょう), 탁음·청음(は↔ば), 촉음 유무, 같은 한자의 다른 음독(ユ↔ユウ↔ユイ) 중 **한 군데만** 바꾸세요.",
         "  - 한자 오답: **모양이 비슷한 글자**로 바꾸세요(伸↔紳, 掃↔婦, 除↔徐, 縮↔宿). 자료에 나란히 실린 비슷한 한자를 먼저 쓰세요.",
@@ -1883,6 +1888,8 @@
         out.answer = a.startsWith("O") || a === "참" || a === "TRUE" ? "O" : "X";
       } else {
         out.answer = String(q.answer || "").trim();
+        // 손으로 써서 답하는 문제 (한자 쓰기 등)
+        if (type === "short" && q.write === "char") out.write = "char";
         // 논술: 답안 분량 제한. 있으면 답안칸이 길어지고 글자 수가 보인다
         const limit = parseInt(q.limit, 10);
         if (type === "essay" && limit >= 200 && limit <= 4000) out.limit = limit;
@@ -2228,6 +2235,16 @@
     for (let i = 0; i < at; i++) if (v[i] === "$" && v[i - 1] !== "\\") n++;
     return n % 2 === 1;
   }
+  /** 글자를 커서 자리에 그대로 (수식 감싸기 없이) */
+  function insertPlain(ta, str) {
+    ta._edit?.(false);
+    const a = ta.selectionStart, b = ta.selectionEnd, v = ta.value;
+    ta.value = v.slice(0, a) + str + v.slice(b);
+    const at = a + str.length;
+    ta.setSelectionRange(at, at);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.focus();
+  }
   function insertTex(ta, tex, back) {
     ta._edit?.(false);   // 그려진 모습을 보고 있었으면 글자 모드로 되돌린다 (숨은 칸에는 커서를 못 둔다)
     const a = ta.selectionStart, b = ta.selectionEnd, v = ta.value;
@@ -2322,8 +2339,8 @@
     });
   }
 
-  /** 답안칸 아래 손글씨판 */
-  function inkPad(ta) {
+  /** 답안칸 아래 손글씨판. mode "text" 면 수식이 아니라 글자로 읽는다(한자·가나·한글 쓰기 문제) */
+  function inkPad(ta, mode = "latex") {
     const canvas = el("canvas", { class: "inkpad-canvas", "aria-label": "수식을 손으로 쓰는 곳" });
     const msg = el("p", { class: "inkpad-msg", "aria-live": "polite" });
     const box = el("div", { class: "inkpad" }, canvas, msg);
@@ -2374,12 +2391,13 @@
       read.disabled = undo.disabled = clear.disabled = true;
       msg.textContent = "읽는 중…";
       try {
-        const { data, error } = await sb.rpc("ink_new", { png });
+        const { data, error } = await sb.rpc("ink_new", { png, p_mode: mode });
         if (error || !data?.ok) { msg.textContent = INK_MSG[data?.reason] || "보내지 못했어요."; return; }
         notifyWorker("ink");
         const r = await waitInk(data.id);
         if (r.error) { msg.textContent = r.error; return; }
-        insertTex(ta, r.latex, 0);
+        if (mode === "text") insertPlain(ta, r.latex);   // 글자는 $…$ 로 감싸면 안 된다
+        else insertTex(ta, r.latex, 0);
         strokes = []; redraw();
         msg.textContent = "넣었어요. 틀린 곳은 고쳐 주세요.";
       } catch (e) {
@@ -2552,7 +2570,10 @@
         clearTimeout(pv); pv = setTimeout(updatePreview, 250);
       });
       // 미리보기는 답안칸 **바로 아래**에. 키패드·손글씨판을 그 위에 두면 화면 밖으로 밀려 안 보인다
-      art.append(ta, ...(count ? [count] : []), view, preview, ...mathPad(ta), ...inkPad(ta));
+      // 한자·가나·한글을 직접 쓰는 문제(write: "char")는 글자 모드로 읽고, 수식 키패드는 의미가 없어 뺀다
+      const byHand = q.write === "char";
+      art.append(ta, ...(count ? [count] : []), view, preview,
+        ...(byHand ? [] : mathPad(ta)), ...inkPad(ta, byHand ? "text" : "latex"));
       updatePreview();
       showCount();
       showView();   // 다시 그릴 때는 보던 상태 — 그려진 모습으로 시작한다
