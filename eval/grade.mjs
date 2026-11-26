@@ -51,7 +51,9 @@ export function machineChecks(exam, instructions) {
   qs.forEach((q, i) => {
     const at = i + 1;
     if (q.type === "mc") {
-      if (!Array.isArray(q.choices) || q.choices.length !== 5) bad.push({ at, kind: "형식", why: `선지가 ${q.choices?.length ?? 0}개` });
+      // 보기 수는 4 또는 5 (출제 조건에서 고른다). 한 시험지 안에서 섞이면 그건 문제다
+      const want = parseInt((instructions.match(/보기 \*\*정확히 (\d+)개\*\*/) || [])[1], 10) || 5;
+      if (!Array.isArray(q.choices) || q.choices.length !== want) bad.push({ at, kind: "형식", why: `선지가 ${q.choices?.length ?? 0}개 (조건은 ${want}개)` });
       if (!(q.answer >= 1 && q.answer <= 5)) bad.push({ at, kind: "형식", why: `정답 번호 ${q.answer}` });
       const uniq = new Set((q.choices || []).map(norm));
       if (uniq.size !== (q.choices || []).length) bad.push({ at, kind: "형식", why: "같은 선지가 둘" });
