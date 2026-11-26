@@ -185,10 +185,11 @@ async function refineCrops(exam, bufs, isCancelled) {
 }
 
 // 문항의 "figure": n 을 시험지용 공개 저장소의 그림으로 바꿈. 붙인 그림 수를 돌려줌
-async function attachFigures(exam, bufs) {
+/** 그림을 올려 붙인다. 시험지는 questions, 요약·설명은 sections 를 넘긴다 */
+async function attachFigures(items, bufs) {
   const folder = crypto.randomUUID();
   const uploaded = new Map();
-  for (const q of exam.questions) {
+  for (const q of items) {
     const n = parseInt(q.figure, 10);
     const crop = validCrop(q.figure_crop);
     // 가릴 칸이 잘라 낸 영역의 가장자리에 닿아 있으면 바깥 여유(pad)까지 늘림 → 경계에 글자 조각이 남지 않게
@@ -301,8 +302,11 @@ async function handle(id) {
     if (cancelled || !(await stillWanted(id))) { cancelled = true; return; }
     if (!exam) throw lastErr;
 
-    // 요약·설명은 그림을 붙이지 않는다(자료의 그림은 글로 설명하게 되어 있다). 바로 저장한다.
+    // 요약·설명도 그림을 붙인다 (그래프·회로도는 글로 풀어 쓰는 것보다 그림이 낫다).
+    // 시험지와 달리 '정답이 그림에 적혀 있으면 가린다'는 사정이 없어서 영역을 다시 잡는 2차 호출은 하지 않는다.
     if (!isExam) {
+      const dfigs = await attachFigures(exam.sections, imgBufs);
+      if (dfigs) log(`[${short(id)}] ${KIND_NAME[kind]}에 그림 ${dfigs}장 붙임`);
       const docId = await finish(id, exam, kind);
       await broadcast("req-" + id, "update", { status: "done", exam_id: docId });
       log(`[${short(id)}] 완료 (${KIND_NAME[kind]} ${exam.sections.length}항목, ${Math.round((Date.now() - started) / 1000)}초)`);
@@ -323,13 +327,13 @@ async function handle(id) {
 
     if (regen) {
       const one = target;
-      await attachFigures(one, imgBufs);
+      await attachFigures(one.questions, imgBufs);
       await finishRegen(id, regen.examId, regen.idx, one.questions[0]);
       await broadcast("req-" + id, "update", { status: "done", exam_id: regen.examId });
       log(`[${short(id)}] 완료 (${regen.idx + 1}번 문제 교체, ${Math.round((Date.now() - started) / 1000)}초)`);
       return;
     }
-    const figs = await attachFigures(exam, imgBufs);
+    const figs = await attachFigures(exam.questions, imgBufs);
     if (figs) log(`[${short(id)}] 문제에 그림 ${figs}장 붙임`);
     const examId = await finish(id, exam);
     await broadcast("req-" + id, "update", { status: "done", exam_id: examId });

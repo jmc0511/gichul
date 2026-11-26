@@ -1641,6 +1641,10 @@
         line(sec, i, "why", "왜 그런가: "),
         line(sec, i, "example", "예시: "),
         line(sec, i, "pitfall", "헷갈리기 쉬운 곳: "),
+        // 자료 속 그림 (그래프·회로도처럼 글로 풀어 쓰기 어려운 것)
+        (() => { const f = safeFigure(sec.figure); return f ? figureEl(f, i, "항목") : null; })(),
+        docEdit && sec.figure ? el("button", { type: "button", class: "link doc-drop", text: "그림 지우기",
+          onclick: () => editDoc((ss) => { delete ss[i].figure; }) }) : null,
         sec.source ? el("p", { class: "src", text: sec.source }) : null))
     );
     // 고치는 중에는 수식을 원문 그대로 둔다 (렌더된 수식은 고칠 수 없다)
@@ -1661,6 +1665,7 @@
       if (sec.why) out.push("왜 그런가: " + sec.why);
       if (sec.example) out.push("예시: " + sec.example);
       if (sec.pitfall) out.push("헷갈리기 쉬운 곳: " + sec.pitfall);
+      if (sec.figure) out.push("[그림 있음 — 사이트에서 보세요]");
       if (sec.source) out.push("(" + sec.source + ")");
       out.push("");
     }
@@ -1867,11 +1872,8 @@
         const lead = String(q.passage_lead || "").trim();
         if (lead) out.passage_lead = lead.slice(0, 120);
       }
-      if (q.figure && typeof q.figure.path === "string" && /^[0-9a-f-]{36}\/\d+\.jpg$/i.test(q.figure.path)) {
-        const c = q.figure.crop;
-        const box = (b) => Array.isArray(b) && b.length === 4 && b.every((v) => typeof v === "number" && isFinite(v));
-        out.figure = { path: q.figure.path, crop: box(c) ? c : null, hide: Array.isArray(q.figure.hide) ? q.figure.hide.filter(box).slice(0, 4) : [] };
-      }
+      const fig = safeFigure(q.figure);
+      if (fig) out.figure = fig;
       if (type === "mc") {
         out.choices = (q.choices || []).slice(0, 5).map((c) => String(c).replace(/^\s*[①②③④⑤]\s*/, ""));
         out.answer = parseInt(q.answer, 10);
@@ -2763,9 +2765,16 @@
   window.addEventListener("afterprint", afterPrint);
 
   // 문제 그림: 쪽 이미지에서 crop 영역만 잘라 보여줌
-  function figureEl(fig, i) {
+  /** 처리기가 넣어 준 그림 값만 통과시킨다 (경로 모양·좌표 검사). 시험지·요약 둘 다 쓴다 */
+  function safeFigure(f) {
+    if (!f || typeof f.path !== "string" || !/^[0-9a-f-]{36}\/\d+\.jpg$/i.test(f.path)) return null;
+    const box = (b) => Array.isArray(b) && b.length === 4 && b.every((v) => typeof v === "number" && isFinite(v));
+    return { path: f.path, crop: box(f.crop) ? f.crop : null, hide: Array.isArray(f.hide) ? f.hide.filter(box).slice(0, 4) : [] };
+  }
+
+  function figureEl(fig, i, what = "문제") {
     const src = cfg.SUPABASE_URL.replace(/\/$/, "") + "/storage/v1/object/public/exam-figures/" + fig.path;
-    const img = el("img", { src, alt: `${i + 1}번 문제 그림`, loading: "lazy", decoding: "async" });
+    const img = el("img", { src, alt: `${i + 1}번 ${what} 그림`, loading: "lazy", decoding: "async" });
     const box = el("div", { class: "fig-box" }, img);
     const wrap = el("figure", { class: "fig" }, box);
     if (fig.crop) {
