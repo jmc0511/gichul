@@ -414,8 +414,9 @@
 
   /* ---------- PDF 읽기 ---------- */
   // 그림 판정: 사진/그림 객체가 있거나, 선·도형이 많거나(회로도·그래프), 글자가 거의 없는(스캔) 쪽
+  // images 도 같이 돌려준다 — 쪽을 몇 px 로 그릴지 정하는 데 쓴다(아래 maxW)
   async function pdfVisualScore(page, textLen) {
-    if (textLen < 40) return 1000;
+    if (textLen < 40) return { score: 1000, images: 1 };   // 글자가 없는 쪽: 그림이 유일한 글자 출처
     const OPS = pdfjsLib.OPS;
     const ops = (await page.getOperatorList()).fnArray;
     let images = 0, paths = 0;
@@ -423,8 +424,8 @@
       if (op === OPS.paintImageXObject || op === OPS.paintInlineImageXObject || op === OPS.paintImageMaskXObject) images++;
       else if (op === OPS.constructPath) paths++;
     }
-    if (!images && paths < 40) return 0;
-    return images * 10 + Math.min(paths, 400) / 10;
+    if (!images && paths < 40) return { score: 0, images };
+    return { score: images * 10 + Math.min(paths, 400) / 10, images };
   }
 
   // 다 읽은 PDF는 메모리에서 닫음 (아이패드에서 큰 PDF 여러 개를 열어 두면 탭이 꺼짐).
@@ -440,9 +441,11 @@
         const text = tc.items.map((it) => (it.str || "") + (it.hasEOL ? "\n" : " ")).join("")
           .replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
         pages.push(text);
-        let score = 0;
-        try { score = await pdfVisualScore(page, text.length); } catch (e) {}
-        const maxW = text.length >= PAGE_TEXT_ENOUGH ? IMG_MAX_W_TEXT : IMG_MAX_W;
+        let score = 0, raster = 1;   // 못 읽었으면 래스터로 치고 큰 쪽(안전한 쪽)으로 간다
+        try { const v = await pdfVisualScore(page, text.length); score = v.score; raster = v.images; } catch (e) {}
+        // 글자가 넉넉히 뽑혔거나, 쪽이 전부 벡터면(= 쪽의 글자가 남김없이 추출됨) 800으로 충분하다.
+        // 글자가 적으면서 래스터 그림이 박혀 있으면 그 그림 안에 글자가 있을 수 있어 1100을 쓴다.
+        const maxW = (text.length >= PAGE_TEXT_ENOUGH || !raster) ? IMG_MAX_W_TEXT : IMG_MAX_W;
         if (score) visuals.push({ page: i - 1, score, render: () => renderPdfFilePage(file, i, maxW) });
         page.cleanup();
       }
