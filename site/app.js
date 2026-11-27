@@ -714,9 +714,10 @@
     const images = [];
     for (const im of d.images || []) {
       const path = `${d.id}/${String(im.no).padStart(2, "0")}.jpg`;
-      // upsert: 앞서 올리다 끊겼을 수 있다. 같은 자리에 다시 쓴다
-      const up = await sb.storage.from("request-images").upload(path, im.blob, { contentType: "image/jpeg", upsert: true });
-      if (up.error) throw up.error;
+      // 스토리지에는 넣기(INSERT) 권한만 있다 — upsert 는 거부당한다.
+      // 앞서 올리다 끊겼으면 같은 자리에 이미 있을 수 있으니, '이미 있음'은 올린 것으로 친다
+      const up = await sb.storage.from("request-images").upload(path, im.blob, { contentType: "image/jpeg", upsert: false });
+      if (up.error && !/exists|duplicate/i.test(String(up.error.message || ""))) throw up.error;
       images.push({ path, label: im.label });
     }
     const { error } = await sb.from("requests").insert({
