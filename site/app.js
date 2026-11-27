@@ -342,7 +342,7 @@
   window.addEventListener("online", () => { showOfflineBar(); refresh(); });
   function needNet(what) {
     if (!offline()) return false;
-    setStatus(`인터넷이 없어서 ${what} 못 해요. 받아 둔 시험지는 그대로 풀 수 있어요.`, true);
+    setStatus(`인터넷이 없어서 ${what} 못해요. 받아 둔 시험지는 그대로 풀 수 있어요.`, true);
     return true;
   }
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1505,7 +1505,7 @@
     showOfflineBar();
     renderLib();
     syncChannels();
-    loadQuota();
+    loadQuota().catch(() => {}); // 인터넷이 없으면 한도를 못 물어본다 (조용히 넘어간다)
     schedulePoll();
   }
 
