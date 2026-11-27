@@ -442,28 +442,37 @@
         pages.push(text);
         let score = 0;
         try { score = await pdfVisualScore(page, text.length); } catch (e) {}
-        if (score) visuals.push({ page: i - 1, score, render: () => renderPdfFilePage(file, i) });
+        const maxW = text.length >= PAGE_TEXT_ENOUGH ? IMG_MAX_W_TEXT : IMG_MAX_W;
+        if (score) visuals.push({ page: i - 1, score, render: () => renderPdfFilePage(file, i, maxW) });
         page.cleanup();
       }
     } finally { pdf.destroy(); }
     const chars = pages.reduce((a, p) => a + p.length, 0);
     return { pages, visuals, scanned: chars / Math.max(1, pages.length) < 40 };
   }
-  async function renderPdfFilePage(file, n) {
+  async function renderPdfFilePage(file, n, maxW) {
     await need("pdfjs");
     const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-    try { return await renderPdfPage(pdf, n); } finally { pdf.destroy(); }
+    try { return await renderPdfPage(pdf, n, maxW); } finally { pdf.destroy(); }
   }
 
-  // 그림 폭·화질: Claude가 어차피 약 900px로 줄여 읽어서 1100px·75로도 판독은 같고 용량은 약 57%
-  const IMG_MAX_W = 1100;
+  // 그림 폭·화질: Claude가 어차피 약 900px로 줄여 읽어서 1100px·75로도 판독은 같고 용량은 약 57%.
+  //
+  // 쪽마다 폭을 달리한다. 그림은 입력 토큰의 절반 이상을 먹는데(1100px 16:9 한 장이 약 900토큰),
+  // 줄여도 되는 쪽과 줄이면 안 되는 쪽이 갈린다.
+  //  - 글자가 이미 따로 뽑혀 나간 쪽: 그림은 도표·배치를 보여 주는 보조다. 800이면 충분하고 토큰이 절반.
+  //  - 글자가 거의 없는 쪽(스캔본·교재 사진): 그림이 **유일한 글자 출처**다. 줄이면 잔글씨가 뭉개진다.
+  //    일본어 교재 사진으로 재 보니 한자는 800에서도 멀쩡한데 후리가나가 먼저 무너졌다.
+  const IMG_MAX_W = 1100;       // 사진·스캔본 — 그림에서 글자를 읽어야 하는 쪽
+  const IMG_MAX_W_TEXT = 800;   // 글자를 따로 보내는 쪽
+  const PAGE_TEXT_ENOUGH = 120; // 이만큼 글자가 뽑혔으면 그 쪽은 글자가 따로 간다고 본다
   async function canvasToJpeg(canvas) {
     return new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.75));
   }
-  async function renderPdfPage(pdf, n) {
+  async function renderPdfPage(pdf, n, maxW = IMG_MAX_W) {
     const page = await pdf.getPage(n);
     const base = page.getViewport({ scale: 1 });
-    const vp = page.getViewport({ scale: Math.min(2, IMG_MAX_W / base.width) });
+    const vp = page.getViewport({ scale: Math.min(2, maxW / base.width) });
     const c = document.createElement("canvas");
     c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
     const ctx = c.getContext("2d");
@@ -472,12 +481,12 @@
     return canvasToJpeg(c);
   }
   // PPTX 속 그림 파일을 JPEG로 (크면 줄임)
-  async function mediaToJpeg(zipFile) {
-    return blobToJpeg(await zipFile.async("blob"));
+  async function mediaToJpeg(zipFile, maxW) {
+    return blobToJpeg(await zipFile.async("blob"), maxW);
   }
-  async function blobToJpeg(blob) {
+  async function blobToJpeg(blob, maxW = IMG_MAX_W) {
     const bmp = await createImageBitmap(blob, { imageOrientation: "from-image" });
-    const s = Math.min(1, IMG_MAX_W / bmp.width);
+    const s = Math.min(1, maxW / bmp.width);
     const c = document.createElement("canvas");
     c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
     const ctx = c.getContext("2d");
@@ -537,7 +546,8 @@
           if (size && size < 8000) continue; // 아이콘·로고 같은 작은 그림은 건너뜀
           // 압축 파일을 메모리에 들고 있지 않도록, 그릴 때 파일에서 다시 열어 그 그림만 꺼냄
           const path = mf.name;
-          visuals.push({ page, score: text.length < 15 ? 1000 : 20, render: async () => mediaToJpeg((await JSZip.loadAsync(await file.arrayBuffer())).file(path)) });
+          const maxW = text.length >= PAGE_TEXT_ENOUGH ? IMG_MAX_W_TEXT : IMG_MAX_W;
+          visuals.push({ page, score: text.length < 15 ? 1000 : 20, render: async () => mediaToJpeg((await JSZip.loadAsync(await file.arrayBuffer())).file(path), maxW) });
         }
         const m = relXml.match(/Target="\.\.\/notesSlides\/(notesSlide\d+\.xml)"/);
         const notes = m && zip.file("ppt/notesSlides/" + m[1]);
