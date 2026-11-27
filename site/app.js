@@ -270,14 +270,19 @@
     if (!sb) return;
     renderAccount();
     sb.auth.onAuthStateChange((event, session) => {
+      const first = !authSettled;
+      authSettled = true;
       const prev = user?.id;
       user = session?.user || null;
       renderAccount();
+      // 로그인 상태가 정해졌으니, 로그인하지 않은 사람도 담아 둔 것을 보낼 수 있다
+      if (first) setTimeout(flushOutbox, 0);
       if (user && (user.id !== prev || event === "USER_UPDATED")) {
         // 인증 콜백 안에서 바로 DB를 부르면 멈출 수 있어 다음 틱으로 미룸
         setTimeout(async () => {
           await pullSync();
           await refresh();
+          flushOutbox(); // 로그인이 정해진 뒤라야 담아 둔 요청을 제 계정으로 보낼 수 있다
           if (event === "SIGNED_IN" && !user.is_anonymous) setStatus("로그인했어요. 내 시험지와 오답노트가 이 계정에 저장돼요.");
           // 게스트 전환은 요청을 보내는 길에 조용히 일어나므로 알리지 않는다 (진행 상황 문구를 덮어쓰지 않게)
         }, 0);
@@ -339,12 +344,7 @@
     if (bar) bar.hidden = !offline();
   }
   window.addEventListener("offline", showOfflineBar);
-  window.addEventListener("online", () => { showOfflineBar(); refresh(); });
-  function needNet(what) {
-    if (!offline()) return false;
-    setStatus(`인터넷이 없어서 ${what} 못해요. 받아 둔 시험지는 그대로 풀 수 있어요.`, true);
-    return true;
-  }
+  window.addEventListener("online", () => { showOfflineBar(); refresh(); flushOutbox(); });
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   function examLink(id) {
@@ -621,8 +621,14 @@
     let dbp = null;
     const open = () => dbp || (dbp = new Promise((ok, no) => {
       try {
-        const r = indexedDB.open("gichuri-library", 1);
-        r.onupgradeneeded = () => { r.result.createObjectStore("meta", { keyPath: "id" }); r.result.createObjectStore("blobs", { keyPath: "id" }); };
+        const r = indexedDB.open("gichuri-library", 2);
+        r.onupgradeneeded = () => {
+          const db = r.result;
+          if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "id" });
+          if (!db.objectStoreNames.contains("blobs")) db.createObjectStore("blobs", { keyPath: "id" });
+          // 인터넷이 없을 때 눌러 둔 것 (아래 '보낼 것 보관함'). 그림 덩어리가 들어가므로 여기에 둔다
+          if (!db.objectStoreNames.contains("outbox")) db.createObjectStore("outbox", { keyPath: "id" });
+        };
         r.onsuccess = () => ok(r.result);
         r.onerror = () => no(r.error);
       } catch (e) { no(e); }
@@ -641,9 +647,158 @@
       blob: (id) => run(["blobs"], "readonly", (t) => t.objectStore("blobs").get(id)),
       add: (meta, blob) => run(["meta", "blobs"], "readwrite", (t) => { t.objectStore("blobs").put({ id: meta.id, blob }); return t.objectStore("meta").put(meta); }),
       setMeta: (meta) => run(["meta"], "readwrite", (t) => t.objectStore("meta").put(meta)),
-      del: (id) => run(["meta", "blobs"], "readwrite", (t) => { t.objectStore("blobs").delete(id); return t.objectStore("meta").delete(id); })
+      del: (id) => run(["meta", "blobs"], "readwrite", (t) => { t.objectStore("blobs").delete(id); return t.objectStore("meta").delete(id); }),
+      outAll: () => run(["outbox"], "readonly", (t) => t.objectStore("outbox").getAll()),
+      outPut: (row) => run(["outbox"], "readwrite", (t) => t.objectStore("outbox").put(row)),
+      outDel: (id) => run(["outbox"], "readwrite", (t) => t.objectStore("outbox").delete(id))
     };
   })();
+
+  /* ---------- 보낼 것 보관함 ----------
+     출제·문제 바꾸기·손글씨 읽기·신고·쿠폰은 서버가 해 주는 일이라, 인터넷이 없으면 '지금' 할 수 없다.
+     대신 누른 그대로 담아 두고 연결되는 순간 차례로 내보낸다.
+     담을 때 이미 다 만들어 둔다 — 지시문도, 자료 글도, 그림도. 나중에 자료함을 바꿔도 보낸 것은 그대로다.
+     차례를 지키려고 하나가 막히면 거기서 멈춘다. 한도처럼 기다려도 안 풀리는 것만 버린다. */
+  const OUT_MAX = 10;
+  // 첫 onAuthStateChange 가 오기 전에는 로그인 상태를 모른다. 그 전에 보내면 멀쩡한 계정을 두고
+  // 게스트로 새로 로그인해 버릴 수 있어, 정해질 때까지 기다린다
+  let authSettled = false;
+  const OUT_LABEL = { request: "출제 요청", regen: "문제 다시 만들기", ink: "손글씨 읽기", report: "문제 신고", coupon: "쿠폰 등록" };
+  let flushing = false;
+
+  async function outAdd(kind, label, data) {
+    try {
+      const rows = await lib.outAll();
+      if (rows.length >= OUT_MAX) { setStatus(`보낼 것이 ${OUT_MAX}개나 밀려 있어요. 연결된 뒤에 다시 해 주세요.`, true); return false; }
+      await lib.outPut({ id: crypto.randomUUID(), kind, label, at: Date.now(), data });
+    } catch (e) { setStatus("이 기기에 담아 두지 못했어요.", true); return false; }
+    renderOutbox();
+    return true;
+  }
+
+  async function flushOutbox() {
+    if (flushing || offline() || !sb || !authSettled) return;
+    flushing = true;
+    try {
+      for (;;) {
+        let rows;
+        try { rows = await lib.outAll(); } catch (e) { break; }
+        if (!rows.length) break;
+        const row = rows.sort((a, b) => a.at - b.at)[0];
+        let r;
+        try { r = await sendOut(row); } catch (e) { r = { keep: true }; }
+        if (r.keep) break;           // 아직 못 보냄 — 다음 기회에, 차례 그대로
+        try { await lib.outDel(row.id); } catch (e) { break; }
+        if (r.msg) setStatus(r.msg, !r.ok);
+        renderOutbox();
+      }
+    } finally { flushing = false; }
+    renderOutbox();
+  }
+
+  function sendOut(row) {
+    const d = row.data;
+    if (row.kind === "request") return sendQueuedRequest(d);
+    if (row.kind === "regen") return sendQueuedRegen(d);
+    if (row.kind === "ink") return sendQueuedInk(d);
+    if (row.kind === "report") return sendQueuedReport(d);
+    if (row.kind === "coupon") return sendQueuedCoupon(d);
+    return Promise.resolve({ ok: false });   // 모르는 것은 버린다
+  }
+
+  async function sendQueuedRequest(d) {
+    if (!user) { await signInGuest(); if (!user) return { keep: true }; }
+    await loadQuota();
+    // 한도는 기다린다고 풀리지 않는다. 들고 있으면 뒤가 전부 막히므로 버리고 알려 준다
+    if (quotaBlock()) return { ok: false, msg: `담아 둔 ${KIND_LABEL[d.kind]} 요청을 보내지 못했어요 — ${quotaBlock()}` };
+    const images = [];
+    for (const im of d.images || []) {
+      const path = `${d.id}/${String(im.no).padStart(2, "0")}.jpg`;
+      // upsert: 앞서 올리다 끊겼을 수 있다. 같은 자리에 다시 쓴다
+      const up = await sb.storage.from("request-images").upload(path, im.blob, { contentType: "image/jpeg", upsert: true });
+      if (up.error) throw up.error;
+      images.push({ path, label: im.label });
+    }
+    const { error } = await sb.from("requests").insert({
+      id: d.id, subject: d.subject, files: d.files, pages: d.pages, kind: d.kind,
+      instructions: d.instructions, material: d.material, fast: d.fast,
+      images: images.length ? images : null
+    });
+    if (error) throw error;
+    store("gichul.myreqs", [d.id, ...myRequestIds()].slice(0, 30));
+    rememberPerPage(d.id, d.perPage || 0);
+    notifyWorker();
+    await refresh();
+    return { ok: true, msg: `담아 둔 ${KIND_LABEL[d.kind]} 요청을 보냈어요. 보통 1~2분 뒤 문제집에 올라와요.` };
+  }
+
+  async function sendQueuedRegen(d) {
+    const { data, error } = await sb.rpc("regen_question", { src: d.src, idx: d.idx, new_id: d.id });
+    if (error) {
+      const m = String(error.message || "");
+      // 기다려도 안 풀리는 것(한도·보관 기간)은 버리고, 그 밖의 오류는 다시 시도한다
+      const code = Object.keys(LIMIT_MSG).find((k) => m.includes(k));
+      if (code) return { ok: false, msg: `담아 둔 ${d.pos + 1}번 문제 다시 만들기를 보내지 못했어요 — ${LIMIT_MSG[code]}` };
+      throw error;
+    }
+    if (!data) return { ok: false, msg: `담아 둔 ${d.pos + 1}번 문제 다시 만들기를 보내지 못했어요 — 자료 보관 기간(14일)이 지났어요.` };
+    store("gichul.myreqs", [d.id, ...myRequestIds()].slice(0, 30));
+    notifyWorker();
+    await refresh();
+    return { ok: true, msg: `담아 둔 ${d.pos + 1}번 문제를 새로 만드는 중이에요.` };
+  }
+
+  async function sendQueuedInk(d) {
+    const { data, error } = await sb.rpc("ink_new", { png: d.png, p_mode: d.mode });
+    if (error) throw error;
+    if (!data?.ok) return { ok: false, msg: INK_MSG[data?.reason] || "담아 둔 손글씨를 읽지 못했어요." };
+    notifyWorker("ink");
+    const r = await waitInk(data.id);
+    if (r.error) return { ok: false, msg: `담아 둔 손글씨: ${r.error}` };
+    // 같은 시험지를 보고 있으면 그 답란에 바로 넣는다. 아니면 읽은 글자만 알려 준다
+    if (d.examId && curExamId === d.examId && Number.isInteger(d.i)) {
+      const cur = state.answers[d.i];
+      state.answers[d.i] = (typeof cur === "string" ? cur : "") + r.latex;
+      persist(); renderSheet();
+      return { ok: true, msg: `담아 둔 손글씨를 ${d.i + 1}번 답에 넣었어요: ${r.latex}` };
+    }
+    return { ok: true, msg: `담아 둔 손글씨를 읽었어요: ${r.latex}` };
+  }
+
+  async function sendQueuedReport(d) {
+    const { data, error } = await sb.rpc("report_question", { exam: d.exam, idx: d.idx, reason: d.reason, note: d.note });
+    if (error) throw error;
+    if (!data) return { ok: false, msg: "담아 둔 신고를 보내지 못했어요." };
+    return { ok: true, msg: "담아 둔 문제 신고를 보냈어요." };
+  }
+
+  async function sendQueuedCoupon(d) {
+    const { data, error } = await sb.rpc("redeem_coupon", { p_code: d.code });
+    if (error) throw error;
+    if (!data?.ok) return { ok: false, msg: `담아 둔 쿠폰을 등록하지 못했어요 — ${COUPON_MSG[data?.reason] || "확인해 주세요."}` };
+    return { ok: true, msg: "담아 둔 쿠폰을 등록했어요." };
+  }
+
+  async function renderOutbox() {
+    const head = $("outHead"), list = $("outList");
+    if (!head || !list) return;
+    let rows = [];
+    try { rows = await lib.outAll(); } catch (e) {}
+    rows.sort((a, b) => a.at - b.at);
+    head.hidden = !rows.length;
+    list.replaceChildren(...rows.map((row) => el("li", { class: "run pending" },
+      el("div", { class: "run-main" },
+        el("span", { class: "t", text: `${OUT_LABEL[row.kind] || "보낼 것"} · ${row.label || ""}` }),
+        el("span", { class: "s", text: when(new Date(row.at).toISOString()) })),
+      el("span", { class: "pill pending", text: offline() ? "연결되면 보냄" : "보내는 중" }),
+      el("span", { class: "acts" },
+        confirmButton("지우기", "정말 지울까요?", async () => {
+          try { await lib.outDel(row.id); } catch (e) {}
+          renderOutbox();
+          setStatus("담아 둔 것을 지웠어요.");
+        })))));
+  }
+
   const LIB_MAX = 30;
   const metaOf = (f) => ({ id: f.id, name: f.name, type: f.type, size: f.size, checked: f.checked, past: !!f.past, addedAt: f.addedAt, summary: f.summary || "" });
   const saveMeta = (f) => { if (f.stored) lib.setMeta(metaOf(f)).catch(() => {}); };
@@ -1000,7 +1155,11 @@
     };
 
     if (!user || user.is_anonymous) { show(COUPON_MSG.login_required, false); return; }
-    if (offline()) { show("인터넷이 없어서 등록하지 못해요.", false); return; }
+    if (offline()) {
+      const ok = await outAdd("coupon", code, { code });
+      show(ok ? "인터넷이 없어서 담아 뒀어요. 연결되면 등록할게요." : "담아 두지 못했어요.", ok);
+      return;
+    }
 
     const { data, error } = await sb.rpc("redeem_coupon", { p_code: code });
     if (error) { show("등록하지 못했어요. 잠시 뒤 다시 시도해 주세요.", false); return; }
@@ -1251,8 +1410,41 @@
     ].filter((x) => x != null).join("\n");
   }
 
+  /** 인터넷이 없을 때: 보낼 내용을 다 만들어(그림까지 그려서) 보관함에 담는다 */
+  async function queueRequest(kind, picked, material) {
+    state.busy = true; renderFiles();
+    try {
+      const ready = activeFiles();
+      const images = [];
+      for (let k = 0; k < picked.length; k++) {
+        setStatus(`그림 준비 중… ${k + 1}/${picked.length}`);
+        const blob = await picked[k].render();
+        if (blob) images.push({ no: picked[k].no, label: `이미지 #${picked[k].no} (${picked[k].label})`, blob });
+      }
+      const subject = $("subject").value.trim();
+      const ok = await outAdd("request", subject || ready.map((f) => f.name).join(", "), {
+        id: crypto.randomUUID(),
+        subject: dbText(subject) || null,
+        files: ready.map((f) => dbText(f.name)),
+        pages: ready.reduce((a, f) => a + f.pages.length, 0),
+        kind,
+        instructions: dbText(kind === "exam" ? buildInstructions() : buildDocInstructions(kind)),
+        material: dbText(material),
+        fast: (checkedVals("speed")[0]?.value || "careful") === "fast",
+        perPage: parseInt(checkedVals("perpage")[0]?.value, 10) || 0,
+        images
+      });
+      if (!ok) return;
+      go("book");
+      setStatus(`인터넷이 없어서 담아 뒀어요. 연결되면 바로 보낼게요. 자료를 지워도 담아 둔 건 그대로예요.`);
+    } catch (e) {
+      setStatus("담아 두지 못했어요. 다시 시도해 주세요.", true);
+    } finally {
+      state.busy = false; renderFiles();
+    }
+  }
+
   async function submitRequest() {
-    if (needNet("요청을 보내지")) return;
     const kind = curKind();
     // 문제 유형·난이도는 시험지에만 있는 조건이다
     if (kind === "exam") {
@@ -1264,6 +1456,9 @@
     const material = buildMaterial(picked);
     const hasText = activeFiles().some((f) => f.pages.some((p) => p.trim()));
     if (!hasText && !picked.length) { setStatus("자료에서 글자도 그림도 찾지 못했어요. 다른 파일로 시도해 주세요.", true); return; }
+    // 인터넷이 없으면 지금 보낼 수는 없다. 보낼 것을 통째로 만들어 담아 두고 연결될 때 내보낸다.
+    // (로그인·한도 확인은 보낼 때 한다 — 둘 다 서버가 있어야 되는 일이다)
+    if (offline()) { await queueRequest(kind, picked, material); return; }
     // 로그인하지 않았으면 여기서 조용히 게스트로 시작한다 (처음 온 사람도 버튼 고르지 않고 바로 쓰게)
     if (!user) { await signInGuest(); if (!user) return; }
     await loadQuota(); // 그림을 올리기 전에 한도부터 확인
@@ -1359,9 +1554,13 @@
 
   // 시험지의 문제 하나만 새로 받기
   async function regenQuestion(q, pos) {
-    if (needNet("문제를 다시 만들지")) return;
     const src = ownRequest(curExamId);
     if (!src || !Number.isInteger(q._i)) return;
+    if (offline()) {
+      await outAdd("regen", `${pos + 1}번 문제`, { id: crypto.randomUUID(), src: src.id, idx: q._i, pos });
+      setStatus(`인터넷이 없어서 담아 뒀어요. 연결되면 ${pos + 1}번 문제를 새로 만들게요.`);
+      return;
+    }
     askNotify();
     await loadQuota();
     if (quotaBlock()) { setStatus(quotaBlock(), true); renderSheet(); return; }
@@ -1501,7 +1700,7 @@
       for (const r of finished) swapLive(r.id, r.status === "done" ? r.exam_id : null);
       for (const r of finished) announceFinished(r);
     } catch (e) {}
-    if (got) saveOffline(); else if (wanted) loadOffline();
+    if (got) { saveOffline(); flushOutbox(); } else if (wanted) loadOffline();
     showOfflineBar();
     renderLib();
     syncChannels();
@@ -2431,9 +2630,16 @@
     const read = el("button", { type: "button", class: "btn go-ink", text: "읽어서 넣기" });
     read.addEventListener("click", async () => {
       if (!sb) { msg.textContent = "사이트 설정이 끝나지 않았어요."; return; }
-      if (offline()) { msg.textContent = "인터넷이 없어서 글씨를 읽지 못해요. 손으로 쓴 답은 직접 적어 주세요."; return; }
       const png = inkToPng(strokes);
       if (!png) { msg.textContent = INK_MSG.empty; return; }
+      if (offline()) {
+        // 지금은 못 읽는다. 그린 것을 담아 뒀다가 연결되면 읽어서 이 답란에 넣는다
+        const i = parseInt(String(ta.id).replace("ans", ""), 10);
+        const where = Number.isInteger(i) ? `${i + 1}번 답` : "답";
+        const ok = await outAdd("ink", where, { png, mode, examId: curExamId, i: Number.isInteger(i) ? i : null });
+        msg.textContent = ok ? `인터넷이 없어서 담아 뒀어요. 연결되면 읽어서 ${where}에 넣을게요.` : "담아 두지 못했어요.";
+        return;
+      }
       read.disabled = undo.disabled = clear.disabled = true;
       msg.textContent = "읽는 중…";
       try {
@@ -2678,7 +2884,15 @@
     }));
     const send = el("button", { type: "button", class: "btn primary", text: "신고 보내기" });
     send.addEventListener("click", async () => {
-      if (needNet("신고를 보내지")) return;
+      if (offline()) {
+        const ok = await outAdd("report", `${t.idx + 1}번 문제`, { exam: t.exam, idx: t.idx, reason, note: note.value.trim() || null });
+        if (!ok) return;
+        markReported(t);
+        delete state.reportOpen[i];
+        setStatus("인터넷이 없어서 담아 뒀어요. 연결되면 신고를 보낼게요.");
+        renderSheet();
+        return;
+      }
       send.disabled = true;
       const { data, error } = await sb.rpc("report_question", { exam: t.exam, idx: t.idx, reason, note: note.value.trim() || null });
       if (error || !data) {
@@ -3133,6 +3347,7 @@
   applyKindUI(); // 출력 종류에 맞는 조건 칸만 보이게
   renderFiles();
   showOfflineBar();
+  renderOutbox(); // 담아 둔 것은 바로 보여 주고, 보내는 건 로그인이 정해진 뒤(initAuth)
   restoreLibrary(); // 이 기기 자료함에 보관한 자료 불러오기
   renderLib();
   initAuth();

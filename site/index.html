@@ -68,7 +68,7 @@
 
   <div class="install-bar off-bar" id="offlineBar" role="status" hidden>
     
-    <span class="install-text"><b>인터넷이 없어요.</b> 받아 둔 시험지는 그대로 풀 수 있어요. 새로 만드는 건 연결된 뒤에 돼요.</span>
+    <span class="install-text"><b>인터넷이 없어요.</b> 받아 둔 시험지는 그대로 풀 수 있어요. 지금 누른 요청은 담아 뒀다가 연결되면 자동으로 보낼게요.</span>
   </div>
 
   <div class="install-bar" id="installBar" hidden>
@@ -264,6 +264,8 @@
       <div><h2>문제집</h2><p>요청한 시험지와 친구가 보낸 시험지가 여기에 쌓여요.</p></div>
       <a class="btn primary" href="#make">＋ 새로 출제</a>
     </div>
+    <p class="section-t" id="outHead" hidden>연결되면 보낼 것</p>
+    <ul class="runs" id="outList"></ul>
     <p class="section-t" id="reqHead" hidden><span class="pulse" aria-hidden="true"></span>내 출제 요청</p>
     <ul class="runs" id="reqList"></ul>
     <p class="section-t" id="examHead">내 시험지</p>
