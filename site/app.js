@@ -308,6 +308,43 @@
   const myRequestIds = () => load("gichul.myreqs", []);
   const myExamIds = () => load("gichul.myexams", []);
   const rememberExam = (id) => store("gichul.myexams", [id, ...myExamIds().filter((x) => x !== id)].slice(0, 30));
+
+  /* ---------- 인터넷 없이 풀기 ----------
+     받아 온 시험지·요약을 통째로 이 기기에 남겨 둔다. 다음에 인터넷이 없으면 그걸 보여 준다.
+     새로 만드는 건 서버가 필요해서 못 하지만, 이미 받은 건 풀고 채점하고 오답노트에 넣을 수 있다.
+     (localStorage 는 5MB 라 넉넉히 들어가지 않는다. 자리가 모자라면 오래된 것부터 버린다) */
+  const OFF_KEY = "gichul.offline";
+  const OFF_MAX = 20;
+  function saveOffline() {
+    const keep = exams.slice(0, OFF_MAX);
+    for (let n = keep.length; n >= 0; n--) {
+      try {
+        localStorage.setItem(OFF_KEY, JSON.stringify({ exams: keep.slice(0, n), requests, at: Date.now() }));
+        return;
+      } catch (e) {}
+    }
+  }
+  function loadOffline() {
+    const d = load(OFF_KEY, null);
+    if (!d || !Array.isArray(d.exams)) return;
+    // 지운 시험지가 되살아나지 않게, 지금 내 목록에 있는 것만 꺼낸다
+    const mine = new Set([...myExamIds(), ...(d.requests || []).map((r) => r.exam_id).filter(Boolean)]);
+    if (!exams.length) exams = d.exams.filter((x) => mine.has(x.id));
+    if (!requests.length) requests = d.requests || [];
+  }
+  // 인터넷이 끊기면 서버가 필요한 일은 막고, 왜 막혔는지 알려 준다
+  const offline = () => !navigator.onLine;
+  function showOfflineBar() {
+    const bar = $("offlineBar");
+    if (bar) bar.hidden = !offline();
+  }
+  window.addEventListener("offline", showOfflineBar);
+  window.addEventListener("online", () => { showOfflineBar(); refresh(); });
+  function needNet(what) {
+    if (!offline()) return false;
+    setStatus(`인터넷이 없어서 ${what} 못 해요. 받아 둔 시험지는 그대로 풀 수 있어요.`, true);
+    return true;
+  }
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   function examLink(id) {
@@ -963,6 +1000,7 @@
     };
 
     if (!user || user.is_anonymous) { show(COUPON_MSG.login_required, false); return; }
+    if (offline()) { show("인터넷이 없어서 등록하지 못해요.", false); return; }
 
     const { data, error } = await sb.rpc("redeem_coupon", { p_code: code });
     if (error) { show("등록하지 못했어요. 잠시 뒤 다시 시도해 주세요.", false); return; }
@@ -1214,6 +1252,7 @@
   }
 
   async function submitRequest() {
+    if (needNet("요청을 보내지")) return;
     const kind = curKind();
     // 문제 유형·난이도는 시험지에만 있는 조건이다
     if (kind === "exam") {
@@ -1320,6 +1359,7 @@
 
   // 시험지의 문제 하나만 새로 받기
   async function regenQuestion(q, pos) {
+    if (needNet("문제를 다시 만들지")) return;
     const src = ownRequest(curExamId);
     if (!src || !Number.isInteger(q._i)) return;
     askNotify();
@@ -1436,9 +1476,11 @@
 
   /* ---------- 문제집 ---------- */
   async function refresh() {
-    if (!sb) return;
     const ids = myRequestIds();
+    const wanted = ids.length || myExamIds().length;
+    let got = false; // 서버에서 실제로 받아 왔는지 (못 받았으면 기기에 남겨 둔 것을 쓴다)
     try {
+      if (!sb) throw new Error("no sb");
       let finished = [];
       if (ids.length) {
         const rq = await sb.rpc("get_requests", { ids });
@@ -1446,18 +1488,21 @@
           const before = new Map(requests.map((r) => [r.id, r.status]));
           requests = rq.data || [];
           finished = requests.filter((r) => (r.status === "done" || r.status === "error") && before.get(r.id) && before.get(r.id) !== r.status);
+          got = true;
         }
       }
       // 내 요청으로 만들어진 시험지 + 링크로 받아서 열어 본 시험지
       const examIds = [...new Set([...requests.map((r) => r.exam_id).filter(Boolean), ...myExamIds()])].slice(0, 50);
       if (examIds.length) {
         const ex = await sb.rpc("get_exams", { ids: examIds });
-        if (!ex.error) exams = ex.data || [];
+        if (!ex.error) { exams = ex.data || []; got = true; }
       }
       // 실시간 알림이 끊겼을 때를 위한 길 (실시간으로 왔으면 그쪽에서 이미 바꿔 끼웠다)
       for (const r of finished) swapLive(r.id, r.status === "done" ? r.exam_id : null);
       for (const r of finished) announceFinished(r);
     } catch (e) {}
+    if (got) saveOffline(); else if (wanted) loadOffline();
+    showOfflineBar();
     renderLib();
     syncChannels();
     loadQuota();
@@ -2386,6 +2431,7 @@
     const read = el("button", { type: "button", class: "btn go-ink", text: "읽어서 넣기" });
     read.addEventListener("click", async () => {
       if (!sb) { msg.textContent = "사이트 설정이 끝나지 않았어요."; return; }
+      if (offline()) { msg.textContent = "인터넷이 없어서 글씨를 읽지 못해요. 손으로 쓴 답은 직접 적어 주세요."; return; }
       const png = inkToPng(strokes);
       if (!png) { msg.textContent = INK_MSG.empty; return; }
       read.disabled = undo.disabled = clear.disabled = true;
@@ -2632,6 +2678,7 @@
     }));
     const send = el("button", { type: "button", class: "btn primary", text: "신고 보내기" });
     send.addEventListener("click", async () => {
+      if (needNet("신고를 보내지")) return;
       send.disabled = true;
       const { data, error } = await sb.rpc("report_question", { exam: t.exam, idx: t.idx, reason, note: note.value.trim() || null });
       if (error || !data) {
@@ -3085,6 +3132,7 @@
   if (state.timer) ensureTick(); // 시험 모드 중에 새로고침했으면 이어서 (시간이 지났으면 바로 채점)
   applyKindUI(); // 출력 종류에 맞는 조건 칸만 보이게
   renderFiles();
+  showOfflineBar();
   restoreLibrary(); // 이 기기 자료함에 보관한 자료 불러오기
   renderLib();
   initAuth();

@@ -629,6 +629,8 @@ details.more summary em.set { color: var(--omr); font-weight: 600; }
 
 /* 공지 바 — 앱 설치 안내와 구분되게 테두리 색만 다르게 */
 .notice-bar { background: var(--omr-soft); color: var(--ink); }
+/* 인터넷이 끊겼을 때. 공지와 달리 닫을 수 없다 — 왜 요청이 안 나가는지 계속 보여야 한다 */
+.off-bar { background: #fdf0e6; color: #7a4a1e; border-color: #f0d3b8; }
 
 /* 수식 키패드 — 폰 자판에 없는 기호를 버튼으로 */
 .mathpad-toggle { display: inline-block; margin: 6px 0 0; font-size: 12px; }

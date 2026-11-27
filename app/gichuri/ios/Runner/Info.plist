@@ -87,5 +87,13 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<!-- 아이폰 웹뷰에서 서비스 워커를 쓰려면 앱이 자기 도메인을 밝혀야 한다.
+		     이게 있어야 인터넷 없이도 받아 둔 시험지를 풀 수 있다.
+		     여기 없는 곳으로는 웹뷰가 못 간다 — 카카오·구글 로그인은 원래 바깥 브라우저로 연다(web_shell.dart). -->
+		<key>WKAppBoundDomains</key>
+		<array>
+			<string>gichul.site</string>
+			<string>cjqhbckclrteazlwjruo.supabase.co</string>
+		</array>
 	</dict>
 </plist>

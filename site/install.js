@@ -23,7 +23,9 @@
 
 (function () {
   const inApp = /GichuriApp/.test(navigator.userAgent); // 앱(Flutter 웹뷰) 안에서 열린 경우
-  if ("serviceWorker" in navigator && !inApp) {
+  // 앱 안에서도 등록한다. 앱은 사이트를 감싼 것뿐이라, 인터넷 없이 시험지를 푸는 길이 이것밖에 없다.
+  // (아이폰 웹뷰는 앱이 WKAppBoundDomains 를 선언해야 서비스 워커가 돈다 — ios/Runner/Info.plist)
+  if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
   }
 

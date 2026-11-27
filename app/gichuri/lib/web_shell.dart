@@ -137,6 +137,10 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     allowFileAccess: true,
     allowContentAccess: true,
     mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
+    // 아이폰 웹뷰는 이걸 켜야 서비스 워커가 돈다 (= 인터넷 없이 받아 둔 시험지 풀기).
+    // 갈 수 있는 곳은 Info.plist 의 WKAppBoundDomains 로 제한되는데,
+    // staysInApp 이 이미 같은 두 곳만 허용하고 있어서 달라지는 건 없다.
+    limitsNavigationsToAppBoundDomains: true,
   );
 
   InAppWebViewController? _web;
