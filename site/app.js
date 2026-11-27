@@ -398,9 +398,11 @@
   // 안내 문구: 출제하기 화면의 상태 줄에 쓰고, 다른 화면을 보고 있으면 잠깐 알림으로도 띄움.
   // quiet = 자료 상태처럼 계속 바뀌는 안내 (알림으로 띄우지 않음)
   let toastTimer = null;
-  function setStatus(msg, err, quiet) {
+  // always: '출제하기' 화면에서도 토스트를 띄운다. 그 화면의 상태줄은 renderSend 가 금세 덮어쓰므로,
+  // 보관함에서 보낸 결과처럼 놓치면 안 되는 소식은 토스트로 띄워야 한다
+  function setStatus(msg, err, quiet, always) {
     const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err);
-    if (quiet || view === "make" || !msg) return;
+    if (quiet || (view === "make" && !always) || !msg) return;
     const t = $("toast");
     t.textContent = msg; t.classList.toggle("err", !!err); t.hidden = false;
     clearTimeout(toastTimer);
@@ -689,7 +691,7 @@
         try { r = await sendOut(row); } catch (e) { r = { keep: true }; }
         if (r.keep) break;           // 아직 못 보냄 — 다음 기회에, 차례 그대로
         try { await lib.outDel(row.id); } catch (e) { break; }
-        if (r.msg) setStatus(r.msg, !r.ok);
+        if (r.msg) setStatus(r.msg, !r.ok, false, true);
         renderOutbox();
       }
     } finally { flushing = false; }
